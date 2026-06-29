@@ -4,13 +4,13 @@ import {
   Modal,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import CommandPalette from '../../src/components/CommandPalette';
 import CommandStrip from '../../src/components/CommandStrip';
 import DroneSprite from '../../src/components/DroneSprite';
