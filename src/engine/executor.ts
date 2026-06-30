@@ -45,16 +45,12 @@ export async function* runSequence(
   let drone: DroneState = { ...level.start };
 
   for (const cmd of program) {
-    if (cmd === 'L') {
+    if (cmd.type === 'turn') {
       const from: DroneState = { ...drone };
-      drone = { ...drone, dir: ((drone.dir + 3) % 4) as Direction };
+      const delta = cmd.dir === 'L' ? 3 : 1;
+      drone = { ...drone, dir: ((drone.dir + delta) % 4) as Direction };
       yield { type: 'turn', from, to: { ...drone } };
-    } else if (cmd === 'R') {
-      const from: DroneState = { ...drone };
-      drone = { ...drone, dir: ((drone.dir + 1) % 4) as Direction };
-      yield { type: 'turn', from, to: { ...drone } };
-    } else {
-      // 'F' — move forward
+    } else if (cmd.type === 'move') {
       const dir = DIRS[drone.dir];
       const nx = drone.x + dir.x;
       const ny = drone.y + dir.y;

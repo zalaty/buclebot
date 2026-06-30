@@ -15,11 +15,11 @@ interface Props {
   par: number;
 }
 
-const LABELS: Record<Command, string> = {
-  F: 'avanzar',
-  L: '↺ izq',
-  R: '↻ der',
-};
+function labelFor(cmd: Command): string {
+  if (cmd.type === 'move') return 'avanzar';
+  if (cmd.type === 'turn') return cmd.dir === 'L' ? '↺ izq' : '↻ der';
+  return `×${cmd.times}`;
+}
 
 export default function CommandStrip({ program, activeIndex, commandCount, par }: Props) {
   const scrollRef = useRef<ScrollView>(null);
@@ -62,7 +62,7 @@ export default function CommandStrip({ program, activeIndex, commandCount, par }
               <Text
                 style={[styles.chipText, i === activeIndex && styles.chipTextActive]}
               >
-                {LABELS[cmd]}
+                {labelFor(cmd)}
               </Text>
             </View>
           ))

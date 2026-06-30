@@ -8,10 +8,10 @@ interface Props {
   disabled: boolean;
 }
 
-const BUTTONS: { cmd: Command; label: string; key: string; icon: string }[] = [
-  { cmd: 'F', label: 'Avanzar', key: 'W / ↑', icon: '▲' },
-  { cmd: 'L', label: 'Girar izq.', key: 'A / ←', icon: '↺' },
-  { cmd: 'R', label: 'Girar der.', key: 'D / →', icon: '↻' },
+const BUTTONS: { id: string; cmd: Command; label: string; key: string; icon: string }[] = [
+  { id: 'move',   cmd: { type: 'move' },            label: 'Avanzar',    key: 'W / ↑', icon: '▲' },
+  { id: 'turn-L', cmd: { type: 'turn', dir: 'L' },  label: 'Girar izq.', key: 'A / ←', icon: '↺' },
+  { id: 'turn-R', cmd: { type: 'turn', dir: 'R' },  label: 'Girar der.', key: 'D / →', icon: '↻' },
 ];
 
 export default function CommandPalette({ onCommand, disabled }: Props) {
@@ -20,9 +20,9 @@ export default function CommandPalette({ onCommand, disabled }: Props) {
 
     const handler = (e: KeyboardEvent) => {
       if (disabled) return;
-      if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') onCommand('F');
-      if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') onCommand('L');
-      if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') onCommand('R');
+      if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp')    onCommand({ type: 'move' });
+      if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft')  onCommand({ type: 'turn', dir: 'L' });
+      if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') onCommand({ type: 'turn', dir: 'R' });
     };
 
     window.addEventListener('keydown', handler);
@@ -31,9 +31,9 @@ export default function CommandPalette({ onCommand, disabled }: Props) {
 
   return (
     <View style={styles.palette}>
-      {BUTTONS.map(({ cmd, label, key, icon }) => (
+      {BUTTONS.map(({ id, cmd, label, key, icon }) => (
         <Pressable
-          key={cmd}
+          key={id}
           style={({ pressed }) => [
             styles.button,
             pressed && styles.buttonPressed,
