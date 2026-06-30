@@ -19,6 +19,7 @@ import { runSequence } from '../../src/engine/executor';
 import { LEVELS } from '../../src/engine/levels';
 import { getScore } from '../../src/engine/scoring';
 import { Command, DroneState, Level } from '../../src/engine/types';
+import { countCommands, unroll } from '../../src/engine/unroll';
 import { colors } from '../../src/theme';
 
 const sleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
@@ -101,7 +102,7 @@ export default function GameScreen() {
     setActiveIdx(-1);
     await sleep(120);
 
-    const gen = runSequence(level, program);
+    const gen = runSequence(level, unroll(program));
     let cmdIndex = 0;
 
     for await (const event of gen) {
@@ -124,7 +125,7 @@ export default function GameScreen() {
         return;
       } else if (event.type === 'goal') {
         await sleep(260);
-        const used = program.length;
+        const used = countCommands(program);
         const score = getScore(used, level.par);
         setResult({ used, score });
         setPhase('won');
@@ -208,7 +209,7 @@ export default function GameScreen() {
             <CommandStrip
               program={program}
               activeIndex={activeIdx}
-              commandCount={program.length}
+              commandCount={countCommands(program)}
               par={level.par}
             />
 
