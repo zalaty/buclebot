@@ -15,6 +15,7 @@ import CommandPalette from '../../src/components/CommandPalette';
 import CommandStrip from '../../src/components/CommandStrip';
 import DroneSprite from '../../src/components/DroneSprite';
 import Grid from '../../src/components/Grid';
+import LoopDraftPanel from '../../src/components/LoopDraftPanel';
 import { runSequence } from '../../src/engine/executor';
 import { LEVELS } from '../../src/engine/levels';
 import { getScore } from '../../src/engine/scoring';
@@ -45,6 +46,11 @@ interface ResultState {
   score: 'optimal' | 'completed';
 }
 
+interface LoopDraft {
+  times: number;
+  body: Command[];
+}
+
 export default function GameScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -54,6 +60,7 @@ export default function GameScreen() {
   const level: Level | undefined = LEVELS.find((l) => l.id === id);
 
   const [program, setProgram] = useState<Command[]>([]);
+  const [loopDraft, setLoopDraft] = useState<LoopDraft | null>(null);
   const [droneState, setDroneState] = useState<DroneState>(
     level ? { ...level.start } : { x: 0, y: 0, dir: 1 },
   );
@@ -76,6 +83,7 @@ export default function GameScreen() {
   const resetLevel = useCallback(() => {
     if (!level) return;
     setProgram(level.id === 'debug-loop' ? DEBUG_LOOP_PROGRAM : []);
+    setLoopDraft(null);
     setDroneState({ ...level.start });
     setPhase('idle');
     setActiveIdx(-1);
@@ -89,19 +97,89 @@ export default function GameScreen() {
     resetLevel();
   }, [id, resetLevel]);
 
+  // Total authoring cost including any open draft
+  const totalCommandCount =
+    countCommands(program) + (loopDraft ? 1 + countCommands(loopDraft.body) : 0);
+
+  const isOverBudget = (extra: number) =>
+    level?.budget !== undefined && totalCommandCount + extra > level.budget;
+
+  // Add a move/turn command — routes into draft body when a draft is open
   const addCommand = useCallback(
     (cmd: Command) => {
       if (phase === 'running') return;
-      setProgram((prev) => [...prev, cmd]);
       setToast('');
+      setToastWarn(false);
+
+      if (loopDraft !== null) {
+        if (isOverBudget(1)) {
+          setToast('Límite de comandos alcanzado.');
+          setToastWarn(true);
+          return;
+        }
+        setLoopDraft((prev) => (prev ? { ...prev, body: [...prev.body, cmd] } : prev));
+      } else {
+        if (isOverBudget(1)) {
+          setToast('Límite de comandos alcanzado.');
+          setToastWarn(true);
+          return;
+        }
+        setProgram((prev) => [...prev, cmd]);
+      }
     },
-    [phase],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [phase, loopDraft, totalCommandCount, level],
   );
+
+  // Open a new loop draft
+  const openLoop = useCallback(() => {
+    if (phase === 'running' || loopDraft !== null) return;
+    // Need room for at least the loop node (1) + one body command (1) = 2
+    if (level?.budget !== undefined && totalCommandCount + 2 > level.budget) {
+      setToast('No hay sitio para un bucle (presupuesto agotado).');
+      setToastWarn(true);
+      return;
+    }
+    setToast('');
+    setToastWarn(false);
+    setLoopDraft({ times: 2, body: [] });
+  }, [phase, loopDraft, totalCommandCount, level]);
+
+  // Seal the draft into the program
+  const closeLoop = useCallback(() => {
+    if (!loopDraft) return;
+    if (loopDraft.body.length === 0) return; // button is disabled; guard anyway
+    const newLoop: Command = { type: 'loop', times: loopDraft.times, body: loopDraft.body };
+    setProgram((prev) => [...prev, newLoop]);
+    setLoopDraft(null);
+    setToast('');
+    setToastWarn(false);
+  }, [loopDraft]);
+
+  // Discard the current draft without adding anything
+  const cancelLoop = useCallback(() => {
+    setLoopDraft(null);
+    setToast('');
+    setToastWarn(false);
+  }, []);
+
+  const changeLoopTimes = useCallback((n: number) => {
+    setLoopDraft((prev) => (prev ? { ...prev, times: n } : prev));
+  }, []);
 
   const undoLast = useCallback(() => {
     if (phase === 'running') return;
-    setProgram((prev) => prev.slice(0, -1));
-  }, [phase]);
+    if (loopDraft !== null) {
+      if (loopDraft.body.length > 0) {
+        setLoopDraft((prev) => (prev ? { ...prev, body: prev.body.slice(0, -1) } : prev));
+      } else {
+        // empty draft — cancel it
+        setLoopDraft(null);
+      }
+    } else {
+      setProgram((prev) => prev.slice(0, -1));
+    }
+  }, [phase, loopDraft]);
 
   const executeProgram = useCallback(async () => {
     if (!level || phase === 'running' || program.length === 0) return;
@@ -168,7 +246,6 @@ export default function GameScreen() {
     if (nextLevel) {
       router.replace(`/game/${nextLevel.id}`);
     } else {
-      // All levels done — go back to select
       router.replace('/');
     }
   }, [level, router]);
@@ -185,8 +262,8 @@ export default function GameScreen() {
 
   const isLastLevel = LEVELS[LEVELS.length - 1].id === level.id;
   const isRunning = phase === 'running';
-
   const levelIndex = LEVELS.findIndex((l) => l.id === level.id);
+  const canRepeat = !isRunning && loopDraft === null;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -223,17 +300,35 @@ export default function GameScreen() {
             <CommandStrip
               program={program}
               activeIndex={activeIdx}
-              commandCount={countCommands(program)}
+              commandCount={totalCommandCount}
               par={level.par}
             />
 
-            <CommandPalette onCommand={addCommand} disabled={isRunning} />
+            {loopDraft && (
+              <LoopDraftPanel
+                times={loopDraft.times}
+                body={loopDraft.body}
+                onChangeTimes={changeLoopTimes}
+                onClose={closeLoop}
+                onCancel={cancelLoop}
+              />
+            )}
+
+            <CommandPalette
+              onCommand={addCommand}
+              onRepeat={openLoop}
+              canRepeat={canRepeat}
+              disabled={isRunning}
+            />
 
             <View style={styles.actionRow}>
               <Pressable
-                style={[styles.runBtn, isRunning && styles.runBtnDisabled]}
+                style={[
+                  styles.runBtn,
+                  (isRunning || loopDraft !== null) && styles.runBtnDisabled,
+                ]}
                 onPress={executeProgram}
-                disabled={isRunning}
+                disabled={isRunning || loopDraft !== null}
                 accessibilityRole="button"
                 accessibilityLabel="Ejecutar programa"
               >
