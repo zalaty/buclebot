@@ -24,6 +24,20 @@ import { colors } from '../../src/theme';
 
 const sleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
 
+// DEBUG: programa pre-cargado para visualizar el pintado de bucles en CommandStrip.
+// Eliminar junto con el nivel 'debug-loop' antes del MVP.
+const DEBUG_LOOP_PROGRAM: Command[] = [
+  {
+    type: 'loop',
+    times: 3,
+    body: [
+      { type: 'move' },
+      { type: 'loop', times: 2, body: [{ type: 'turn', dir: 'R' }] },
+    ],
+  },
+  { type: 'move' },
+];
+
 type GamePhase = 'idle' | 'running' | 'crashed' | 'won';
 
 interface ResultState {
@@ -61,7 +75,7 @@ export default function GameScreen() {
 
   const resetLevel = useCallback(() => {
     if (!level) return;
-    setProgram([]);
+    setProgram(level.id === 'debug-loop' ? DEBUG_LOOP_PROGRAM : []);
     setDroneState({ ...level.start });
     setPhase('idle');
     setActiveIdx(-1);

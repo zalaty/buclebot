@@ -86,4 +86,15 @@ export const LEVELS: Level[] = [
     outro:
       '¿Te has fijado? Has escrito «avanzar» una y otra vez. En el próximo mundo desbloquearás los BUCLES: decir «repite 4 veces» en lugar de copiar y pegar. Justo eso que acabas de echar de menos.',
   },
+  // DEBUG — nivel temporal para probar el pintado de bucles. Eliminar antes del MVP.
+  {
+    id: 'debug-loop',
+    cols: 5,
+    rows: 3,
+    start: { x: 0, y: 1, dir: 1 },
+    goal: { x: 4, y: 1 },
+    walls: [],
+    par: 1,
+    intro: '[DEBUG] Programa pre-cargado con bucles. Solo para ver el pintado en CommandStrip.',
+  },
 ];

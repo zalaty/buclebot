@@ -5,7 +5,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Command } from '../engine/types';
+import { Command, LoopCommand } from '../engine/types';
 import { colors } from '../theme';
 
 interface Props {
@@ -15,10 +15,75 @@ interface Props {
   par: number;
 }
 
-function labelFor(cmd: Command): string {
+function labelFor(cmd: Exclude<Command, LoopCommand>): string {
   if (cmd.type === 'move') return 'avanzar';
-  if (cmd.type === 'turn') return cmd.dir === 'L' ? '↺ izq' : '↻ der';
-  return `×${cmd.times}`;
+  return cmd.dir === 'L' ? '↺ izq' : '↻ der';
+}
+
+// Accent colors per nesting depth (cycles after depth 2)
+const LOOP_ACCENT = [colors.accent, colors.hazardEdge, colors.goal] as const;
+const LOOP_BG = [
+  'rgba(56,225,198,0.07)',
+  'rgba(240,136,62,0.07)',
+  'rgba(110,231,135,0.07)',
+] as const;
+const LOOP_BORDER = [
+  'rgba(56,225,198,0.30)',
+  'rgba(240,136,62,0.30)',
+  'rgba(110,231,135,0.30)',
+] as const;
+
+function depthIdx(depth: number) {
+  return depth % 3;
+}
+
+function renderItem(
+  cmd: Command,
+  key: string,
+  topLevelIndex: number,
+  activeIndex: number,
+  depth: number,
+): React.ReactElement {
+  if (cmd.type === 'loop') {
+    const di = depthIdx(depth);
+    const accent = LOOP_ACCENT[di];
+    const isActive = depth === 0 && topLevelIndex === activeIndex;
+    return (
+      <View
+        key={key}
+        style={[
+          styles.loopBlock,
+          {
+            borderLeftColor: accent,
+            borderColor: isActive ? accent : LOOP_BORDER[di],
+            backgroundColor: isActive ? `${accent}22` : LOOP_BG[di],
+          },
+        ]}
+      >
+        <Text style={[styles.loopLabel, { color: accent }]}>
+          ⟳ {cmd.times}×
+        </Text>
+        <View style={styles.loopBody}>
+          {cmd.body.length === 0 ? (
+            <Text style={[styles.loopEmpty, { color: accent }]}>vacío</Text>
+          ) : (
+            cmd.body.map((inner, j) =>
+              renderItem(inner, `${key}-${j}`, topLevelIndex, -1, depth + 1),
+            )
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  const isActive = depth === 0 && topLevelIndex === activeIndex;
+  return (
+    <View key={key} style={[styles.chip, isActive && styles.chipActive]}>
+      <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+        {labelFor(cmd)}
+      </Text>
+    </View>
+  );
 }
 
 export default function CommandStrip({ program, activeIndex, commandCount, par }: Props) {
@@ -26,7 +91,6 @@ export default function CommandStrip({ program, activeIndex, commandCount, par }
 
   useEffect(() => {
     if (activeIndex >= 0 && scrollRef.current) {
-      // Scroll to active chip (approx 80px per chip)
       scrollRef.current.scrollTo({ x: Math.max(0, activeIndex * 80 - 40), animated: true });
     }
   }, [activeIndex]);
@@ -54,18 +118,7 @@ export default function CommandStrip({ program, activeIndex, commandCount, par }
             Toca los comandos para trazar la ruta…
           </Text>
         ) : (
-          program.map((cmd, i) => (
-            <View
-              key={i}
-              style={[styles.chip, i === activeIndex && styles.chipActive]}
-            >
-              <Text
-                style={[styles.chipText, i === activeIndex && styles.chipTextActive]}
-              >
-                {labelFor(cmd)}
-              </Text>
-            </View>
-          ))
+          program.map((cmd, i) => renderItem(cmd, String(i), i, activeIndex, 0))
         )}
       </ScrollView>
     </View>
@@ -114,6 +167,7 @@ const styles = StyleSheet.create({
     gap: 5,
     flexDirection: 'row',
     flexWrap: 'nowrap',
+    alignItems: 'center',
     minWidth: '100%',
   },
   placeholder: {
@@ -129,7 +183,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.panel2,
     borderWidth: 1,
     borderColor: colors.line,
-    marginRight: 5,
   },
   chipActive: {
     backgroundColor: 'rgba(56,225,198,0.16)',
@@ -142,5 +195,33 @@ const styles = StyleSheet.create({
   },
   chipTextActive: {
     color: colors.accent,
+  },
+  // Loop container
+  loopBlock: {
+    borderWidth: 1,
+    borderLeftWidth: 3,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    alignSelf: 'center',
+  },
+  loopLabel: {
+    fontFamily: 'monospace',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 5,
+  },
+  loopBody: {
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+    alignItems: 'center',
+    gap: 4,
+  },
+  loopEmpty: {
+    fontFamily: 'monospace',
+    fontSize: 11,
+    fontStyle: 'italic',
+    opacity: 0.5,
   },
 });
