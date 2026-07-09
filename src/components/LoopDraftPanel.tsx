@@ -11,9 +11,16 @@ import { colors } from '../theme';
 interface Props {
   times: number;
   body: Command[];
+  /** true = reopened existing loop; false = new loop being created */
+  isEditing: boolean;
   onChangeTimes: (n: number) => void;
+  /** Remove the command at the given index from the body. */
+  onRemoveBodyItem: (index: number) => void;
   onClose: () => void;
+  /** Cancel: discards edits and restores original (if editing), or discards new loop. */
   onCancel: () => void;
+  /** Delete: removes the loop entirely (only meaningful when isEditing). */
+  onDelete: () => void;
 }
 
 function chipLabel(cmd: Command): string {
@@ -22,14 +29,25 @@ function chipLabel(cmd: Command): string {
   return '⟳';
 }
 
-export default function LoopDraftPanel({ times, body, onChangeTimes, onClose, onCancel }: Props) {
+export default function LoopDraftPanel({
+  times,
+  body,
+  isEditing,
+  onChangeTimes,
+  onRemoveBodyItem,
+  onClose,
+  onCancel,
+  onDelete,
+}: Props) {
   const canClose = body.length > 0;
 
   return (
     <View style={styles.panel}>
       {/* Header */}
       <View style={styles.titleRow}>
-        <Text style={styles.panelTitle}>⟳ REPETIR</Text>
+        <Text style={styles.panelTitle}>
+          {isEditing ? '⟳ EDITAR BUCLE' : '⟳ REPETIR'}
+        </Text>
         <Pressable onPress={onCancel} hitSlop={10}>
           <Text style={styles.cancelX}>✕</Text>
         </Pressable>
@@ -62,7 +80,7 @@ export default function LoopDraftPanel({ times, body, onChangeTimes, onClose, on
         </Pressable>
       </View>
 
-      {/* Body preview */}
+      {/* Body: chips are tappable to remove */}
       <View style={styles.bodyArea}>
         {body.length === 0 ? (
           <Text style={styles.bodyEmpty}>
@@ -71,9 +89,17 @@ export default function LoopDraftPanel({ times, body, onChangeTimes, onClose, on
         ) : (
           <View style={styles.bodyChips}>
             {body.map((cmd, i) => (
-              <View key={i} style={styles.chip}>
+              <Pressable
+                key={i}
+                style={({ pressed }) => [styles.chip, pressed && styles.chipPressed]}
+                onPress={() => onRemoveBodyItem(i)}
+                accessibilityRole="button"
+                accessibilityLabel={`Quitar ${chipLabel(cmd)}`}
+                hitSlop={4}
+              >
                 <Text style={styles.chipText}>{chipLabel(cmd)}</Text>
-              </View>
+                <Text style={styles.chipX}>✕</Text>
+              </Pressable>
             ))}
           </View>
         )}
@@ -85,19 +111,28 @@ export default function LoopDraftPanel({ times, body, onChangeTimes, onClose, on
         </Text>
       )}
 
-      {/* Actions */}
+      {/* Primary actions */}
       <View style={styles.actionRow}>
         <Pressable
           style={[styles.closeBtn, !canClose && styles.closeBtnDisabled]}
           onPress={onClose}
           disabled={!canClose}
         >
-          <Text style={styles.closeBtnText}>Cerrar bucle ✓</Text>
+          <Text style={styles.closeBtnText}>
+            {isEditing ? 'Guardar cambios ✓' : 'Cerrar bucle ✓'}
+          </Text>
         </Pressable>
         <Pressable style={styles.cancelBtn} onPress={onCancel}>
           <Text style={styles.cancelBtnText}>Cancelar</Text>
         </Pressable>
       </View>
+
+      {/* Delete action — only when editing an existing loop */}
+      {isEditing && (
+        <Pressable style={styles.deleteBtn} onPress={onDelete}>
+          <Text style={styles.deleteBtnText}>Eliminar bucle</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -182,6 +217,9 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 5,
     borderRadius: 7,
@@ -189,10 +227,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(56,225,198,0.25)',
   },
+  chipPressed: {
+    opacity: 0.55,
+    borderColor: colors.danger,
+  },
   chipText: {
     fontFamily: 'monospace',
     fontSize: 12,
     color: colors.ink,
+  },
+  chipX: {
+    fontSize: 10,
+    color: colors.muted,
+    lineHeight: 13,
   },
   hint: {
     fontSize: 11.5,
@@ -232,5 +279,16 @@ const styles = StyleSheet.create({
   cancelBtnText: {
     fontSize: 12,
     color: colors.muted,
+  },
+  deleteBtn: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,107,107,0.30)',
+    borderRadius: 9,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  deleteBtnText: {
+    fontSize: 12,
+    color: colors.danger,
   },
 });

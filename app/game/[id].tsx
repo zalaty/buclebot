@@ -49,6 +49,10 @@ interface ResultState {
 interface LoopDraft {
   times: number;
   body: Command[];
+  /** null = new loop being created; number = index in program where this loop was reopened from */
+  editingIndex: number | null;
+  /** original state saved so cancelLoop can restore it when editing */
+  original: { times: number; body: Command[] } | null;
 }
 
 export default function GameScreen() {
@@ -142,25 +146,71 @@ export default function GameScreen() {
     }
     setToast('');
     setToastWarn(false);
-    setLoopDraft({ times: 2, body: [] });
+    setLoopDraft({ times: 2, body: [], editingIndex: null, original: null });
   }, [phase, loopDraft, totalCommandCount, level]);
 
-  // Seal the draft into the program
+  // Seal the draft, re-inserting at the original position when editing
   const closeLoop = useCallback(() => {
-    if (!loopDraft) return;
-    if (loopDraft.body.length === 0) return; // button is disabled; guard anyway
+    if (!loopDraft || loopDraft.body.length === 0) return;
     const newLoop: Command = { type: 'loop', times: loopDraft.times, body: loopDraft.body };
-    setProgram((prev) => [...prev, newLoop]);
+    setProgram((prev) => {
+      if (loopDraft.editingIndex !== null) {
+        const idx = Math.min(loopDraft.editingIndex, prev.length);
+        return [...prev.slice(0, idx), newLoop, ...prev.slice(idx)];
+      }
+      return [...prev, newLoop];
+    });
     setLoopDraft(null);
     setToast('');
     setToastWarn(false);
   }, [loopDraft]);
 
-  // Discard the current draft without adding anything
+  // Cancel: restore original loop when editing, otherwise just discard
   const cancelLoop = useCallback(() => {
+    if (loopDraft && loopDraft.editingIndex !== null && loopDraft.original) {
+      const { editingIndex, original } = loopDraft;
+      const restored: Command = { type: 'loop', times: original.times, body: original.body };
+      setProgram((prev) => {
+        const idx = Math.min(editingIndex, prev.length);
+        return [...prev.slice(0, idx), restored, ...prev.slice(idx)];
+      });
+    }
     setLoopDraft(null);
     setToast('');
     setToastWarn(false);
+  }, [loopDraft]);
+
+  // Delete the loop entirely — it's already out of program since openLoopEdit removed it
+  const deleteLoop = useCallback(() => {
+    setLoopDraft(null);
+    setToast('');
+    setToastWarn(false);
+  }, []);
+
+  // Reopen a sealed loop from the strip for editing
+  const openLoopEdit = useCallback(
+    (index: number) => {
+      if (phase === 'running' || loopDraft !== null) return;
+      const cmd = program[index];
+      if (!cmd || cmd.type !== 'loop') return;
+      setProgram((prev) => prev.filter((_, i) => i !== index));
+      setLoopDraft({
+        times: cmd.times,
+        body: [...cmd.body],
+        editingIndex: index,
+        original: { times: cmd.times, body: [...cmd.body] },
+      });
+      setToast('');
+      setToastWarn(false);
+    },
+    [phase, loopDraft, program],
+  );
+
+  // Remove a single command from the draft body
+  const removeBodyItem = useCallback((index: number) => {
+    setLoopDraft((prev) =>
+      prev ? { ...prev, body: prev.body.filter((_, i) => i !== index) } : prev,
+    );
   }, []);
 
   const changeLoopTimes = useCallback((n: number) => {
@@ -173,13 +223,12 @@ export default function GameScreen() {
       if (loopDraft.body.length > 0) {
         setLoopDraft((prev) => (prev ? { ...prev, body: prev.body.slice(0, -1) } : prev));
       } else {
-        // empty draft — cancel it
-        setLoopDraft(null);
+        cancelLoop(); // restores original if editing, discards if new
       }
     } else {
       setProgram((prev) => prev.slice(0, -1));
     }
-  }, [phase, loopDraft]);
+  }, [phase, loopDraft, cancelLoop]);
 
   const executeProgram = useCallback(async () => {
     if (!level || phase === 'running' || program.length === 0) return;
@@ -302,15 +351,19 @@ export default function GameScreen() {
               activeIndex={activeIdx}
               commandCount={totalCommandCount}
               par={level.par}
+              onTapLoop={!isRunning && loopDraft === null ? openLoopEdit : undefined}
             />
 
             {loopDraft && (
               <LoopDraftPanel
                 times={loopDraft.times}
                 body={loopDraft.body}
+                isEditing={loopDraft.editingIndex !== null}
                 onChangeTimes={changeLoopTimes}
+                onRemoveBodyItem={removeBodyItem}
                 onClose={closeLoop}
                 onCancel={cancelLoop}
+                onDelete={deleteLoop}
               />
             )}
 

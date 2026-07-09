@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import {
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +14,8 @@ interface Props {
   activeIndex: number;
   commandCount: number;
   par: number;
+  /** When provided, top-level loop blocks become tappable for editing. */
+  onTapLoop?: (programIndex: number) => void;
 }
 
 function labelFor(cmd: Exclude<Command, LoopCommand>): string {
@@ -20,7 +23,6 @@ function labelFor(cmd: Exclude<Command, LoopCommand>): string {
   return cmd.dir === 'L' ? '↺ izq' : '↻ der';
 }
 
-// Accent colors per nesting depth (cycles after depth 2)
 const LOOP_ACCENT = [colors.accent, colors.hazardEdge, colors.goal] as const;
 const LOOP_BG = [
   'rgba(56,225,198,0.07)',
@@ -43,26 +45,29 @@ function renderItem(
   topLevelIndex: number,
   activeIndex: number,
   depth: number,
+  onTapLoop?: (index: number) => void,
 ): React.ReactElement {
   if (cmd.type === 'loop') {
     const di = depthIdx(depth);
     const accent = LOOP_ACCENT[di];
     const isActive = depth === 0 && topLevelIndex === activeIndex;
-    return (
-      <View
-        key={key}
-        style={[
-          styles.loopBlock,
-          {
-            borderLeftColor: accent,
-            borderColor: isActive ? accent : LOOP_BORDER[di],
-            backgroundColor: isActive ? `${accent}22` : LOOP_BG[di],
-          },
-        ]}
-      >
-        <Text style={[styles.loopLabel, { color: accent }]}>
-          ⟳ {cmd.times}×
-        </Text>
+    const tappable = depth === 0 && !!onTapLoop;
+
+    const blockStyle = [
+      styles.loopBlock,
+      {
+        borderLeftColor: accent,
+        borderColor: isActive ? accent : LOOP_BORDER[di],
+        backgroundColor: (isActive ? `${accent}22` : LOOP_BG[di]) as string,
+      },
+    ];
+
+    const inner = (
+      <>
+        <View style={styles.loopHeader}>
+          <Text style={[styles.loopLabel, { color: accent }]}>⟳ {cmd.times}×</Text>
+          {tappable && <Text style={[styles.loopEditHint, { color: accent }]}>✎</Text>}
+        </View>
         <View style={styles.loopBody}>
           {cmd.body.length === 0 ? (
             <Text style={[styles.loopEmpty, { color: accent }]}>vacío</Text>
@@ -72,6 +77,26 @@ function renderItem(
             )
           )}
         </View>
+      </>
+    );
+
+    if (tappable) {
+      return (
+        <Pressable
+          key={key}
+          style={({ pressed }) => [...blockStyle, pressed && styles.loopBlockPressed]}
+          onPress={() => onTapLoop!(topLevelIndex)}
+          accessibilityRole="button"
+          accessibilityLabel={`Bucle de ${cmd.times} veces. Toca para editar.`}
+        >
+          {inner}
+        </Pressable>
+      );
+    }
+
+    return (
+      <View key={key} style={blockStyle}>
+        {inner}
       </View>
     );
   }
@@ -86,7 +111,13 @@ function renderItem(
   );
 }
 
-export default function CommandStrip({ program, activeIndex, commandCount, par }: Props) {
+export default function CommandStrip({
+  program,
+  activeIndex,
+  commandCount,
+  par,
+  onTapLoop,
+}: Props) {
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -118,7 +149,9 @@ export default function CommandStrip({ program, activeIndex, commandCount, par }
             Toca los comandos para trazar la ruta…
           </Text>
         ) : (
-          program.map((cmd, i) => renderItem(cmd, String(i), i, activeIndex, 0))
+          program.map((cmd, i) =>
+            renderItem(cmd, String(i), i, activeIndex, 0, onTapLoop),
+          )
         )}
       </ScrollView>
     </View>
@@ -205,12 +238,25 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     alignSelf: 'center',
   },
+  loopBlockPressed: {
+    opacity: 0.65,
+  },
+  loopHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 5,
+    gap: 6,
+  },
   loopLabel: {
     fontFamily: 'monospace',
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.5,
-    marginBottom: 5,
+  },
+  loopEditHint: {
+    fontSize: 10,
+    opacity: 0.7,
   },
   loopBody: {
     flexDirection: 'row',
