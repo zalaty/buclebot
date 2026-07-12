@@ -10,54 +10,66 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LEVELS } from '../src/engine/levels';
 import { colors } from '../src/theme';
+import { groupLevelsByWorld, WORLD_CONCEPT_TAGS } from '../src/utils/levelGroups';
+
+const WORLD_SUBTITLES: Record<number, string> = {
+  1: 'Planifica la ruta completa antes de ejecutar.',
+  2: 'Repite bloques de comandos: el presupuesto no te deja escribirlos todos a mano.',
+};
 
 export default function LevelSelectScreen() {
   const router = useRouter();
+  const worldGroups = groupLevelsByWorld(LEVELS);
 
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.header}>
-          <Text style={styles.eyebrow}>Mundo 1</Text>
-          <Text style={styles.title}>Secuencias</Text>
-          <Text style={styles.subtitle}>
-            Planifica la ruta completa antes de ejecutar.
-          </Text>
-        </View>
+        {worldGroups.map((group) => (
+          <View key={group.world} style={styles.worldSection}>
+            <View style={styles.header}>
+              <Text style={styles.eyebrow}>Mundo {group.world}</Text>
+              <Text style={styles.title}>{group.title}</Text>
+              <Text style={styles.subtitle}>
+                {WORLD_SUBTITLES[group.world] ?? ''}
+              </Text>
+            </View>
 
-        <View style={styles.list}>
-          {LEVELS.map((level, index) => (
-            <Pressable
-              key={level.id}
-              style={({ pressed }) => [
-                styles.levelCard,
-                pressed && styles.levelCardPressed,
-              ]}
-              onPress={() => router.push(`/game/${level.id}`)}
-              accessibilityRole="button"
-              accessibilityLabel={`Nivel ${index + 1}`}
-            >
-              <View style={styles.levelLeft}>
-                <Text style={styles.levelNum}>Nivel {index + 1}</Text>
-                <Text style={styles.levelIntro} numberOfLines={2}>
-                  {level.intro}
-                </Text>
-              </View>
-              <View style={styles.levelRight}>
-                <Text style={styles.parLabel}>par</Text>
-                <Text style={styles.parValue}>{level.par}</Text>
-                <Text style={styles.playBtn}>▸</Text>
-              </View>
-            </Pressable>
-          ))}
-        </View>
+            <View style={styles.list}>
+              {group.levels.map((level, index) => (
+                <Pressable
+                  key={level.id}
+                  style={({ pressed }) => [
+                    styles.levelCard,
+                    pressed && styles.levelCardPressed,
+                  ]}
+                  onPress={() => router.push(`/game/${level.id}`)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Mundo ${group.world}, Nivel ${index + 1}`}
+                >
+                  <View style={styles.levelLeft}>
+                    <Text style={styles.levelNum}>
+                      Mundo {group.world} · Nivel {index + 1}
+                    </Text>
+                    <Text style={styles.levelIntro} numberOfLines={2}>
+                      {level.intro}
+                    </Text>
+                  </View>
+                  <View style={styles.levelRight}>
+                    <Text style={styles.parLabel}>par</Text>
+                    <Text style={styles.parValue}>{level.par}</Text>
+                    <Text style={styles.playBtn}>▸</Text>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
 
-        <View style={styles.footer}>
-          <Text style={styles.conceptTag}>ESTO ES UNA SECUENCIA</Text>
-          <Text style={styles.footerNote}>
-            Próximamente: Mundo 2 — BUCLES
-          </Text>
-        </View>
+            <View style={styles.footer}>
+              <Text style={styles.conceptTag}>
+                {WORLD_CONCEPT_TAGS[group.world] ?? ''}
+              </Text>
+            </View>
+          </View>
+        ))}
       </ScrollView>
     </SafeAreaView>
   );
@@ -74,6 +86,9 @@ const styles = StyleSheet.create({
     maxWidth: 600,
     width: '100%',
     alignSelf: 'center',
+  },
+  worldSection: {
+    marginBottom: 36,
   },
   header: {
     marginBottom: 24,
@@ -163,9 +178,5 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     textTransform: 'uppercase',
     color: colors.accent,
-  },
-  footerNote: {
-    fontSize: 12.5,
-    color: colors.muted,
   },
 });

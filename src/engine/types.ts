@@ -14,6 +14,8 @@ export type Command = MoveCommand | TurnCommand | LoopCommand;
 
 export interface Level {
   id: string;
+  /** World this level belongs to (1 = sequences, 2 = loops, …). Omitted on legacy World 1 levels. */
+  world?: number;
   cols: number;
   rows: number;
   start: { x: number; y: number; dir: Direction };

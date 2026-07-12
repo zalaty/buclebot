@@ -22,6 +22,7 @@ import { getScore } from '../../src/engine/scoring';
 import { Command, DroneState, Level } from '../../src/engine/types';
 import { countCommands, unroll } from '../../src/engine/unroll';
 import { colors } from '../../src/theme';
+import { groupLevelsByWorld, levelWorld } from '../../src/utils/levelGroups';
 
 const sleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
 
@@ -289,9 +290,10 @@ export default function GameScreen() {
 
   const goNextLevel = useCallback(() => {
     if (!level) return;
-    const currentIndex = LEVELS.findIndex((l) => l.id === level.id);
-    const nextLevel = LEVELS[currentIndex + 1];
     setShowModal(false);
+    const group = groupLevelsByWorld(LEVELS).find((g) => g.world === levelWorld(level));
+    const currentIndex = group ? group.levels.findIndex((l) => l.id === level.id) : -1;
+    const nextLevel = group && currentIndex >= 0 ? group.levels[currentIndex + 1] : undefined;
     if (nextLevel) {
       router.replace(`/game/${nextLevel.id}`);
     } else {
@@ -309,10 +311,16 @@ export default function GameScreen() {
     );
   }
 
-  const isLastLevel = LEVELS[LEVELS.length - 1].id === level.id;
   const isRunning = phase === 'running';
-  const levelIndex = LEVELS.findIndex((l) => l.id === level.id);
   const canRepeat = !isRunning && loopDraft === null;
+
+  const world = levelWorld(level);
+  const worldGroup = groupLevelsByWorld(LEVELS).find((g) => g.world === world);
+  const levelIndexInWorld = worldGroup ? worldGroup.levels.findIndex((l) => l.id === level.id) : -1;
+  const isDebugLevel = levelIndexInWorld === -1;
+  const isLastLevel = isDebugLevel
+    ? true
+    : worldGroup!.levels[worldGroup!.levels.length - 1].id === level.id;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -321,7 +329,9 @@ export default function GameScreen() {
         <View style={styles.header}>
           <Text style={styles.eyebrow}>Sector</Text>
           <Text style={styles.levelTag}>
-            Nivel {levelIndex + 1} / {LEVELS.length}
+            {isDebugLevel
+              ? 'Nivel de depuración'
+              : `Mundo ${world} · Nivel ${levelIndexInWorld + 1} / ${worldGroup!.levels.length}`}
           </Text>
         </View>
         <Text style={styles.intro}>{level.intro}</Text>
