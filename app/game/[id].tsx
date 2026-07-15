@@ -361,6 +361,7 @@ export default function GameScreen() {
               activeIndex={activeIdx}
               commandCount={totalCommandCount}
               par={level.par}
+              budget={level.budget}
               onTapLoop={!isRunning && loopDraft === null ? openLoopEdit : undefined}
             />
 

@@ -14,6 +14,8 @@ interface Props {
   activeIndex: number;
   commandCount: number;
   par: number;
+  /** World 2+: total command-piece budget. When set, renders visible slots. */
+  budget?: number;
   /** When provided, top-level loop blocks become tappable for editing. */
   onTapLoop?: (programIndex: number) => void;
 }
@@ -116,6 +118,7 @@ export default function CommandStrip({
   activeIndex,
   commandCount,
   par,
+  budget,
   onTapLoop,
 }: Props) {
   const scrollRef = useRef<ScrollView>(null);
@@ -126,16 +129,34 @@ export default function CommandStrip({
     }
   }, [activeIndex]);
 
+  const hasBudget = budget !== undefined;
+  const filledSlots = hasBudget ? Math.min(commandCount, budget) : 0;
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.label}>Programa</Text>
         <Text style={styles.count}>
           <Text style={styles.countNum}>{commandCount}</Text>
-          <Text style={styles.countMuted}> comandos · par </Text>
+          {hasBudget ? (
+            <Text style={styles.countMuted}> / {budget} ranuras · par </Text>
+          ) : (
+            <Text style={styles.countMuted}> comandos · par </Text>
+          )}
           <Text style={styles.countNum}>{par}</Text>
         </Text>
       </View>
+
+      {hasBudget && (
+        <View style={styles.slotsRow} accessibilityLabel={`Presupuesto: ${filledSlots} de ${budget} ranuras usadas`}>
+          {Array.from({ length: budget }).map((_, i) => (
+            <View
+              key={i}
+              style={[styles.slot, i < filledSlots ? styles.slotFilled : styles.slotEmpty]}
+            />
+          ))}
+        </View>
+      )}
 
       <ScrollView
         ref={scrollRef}
@@ -187,6 +208,28 @@ const styles = StyleSheet.create({
   countMuted: {
     color: colors.muted,
     fontFamily: 'monospace',
+  },
+  slotsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+    marginBottom: 10,
+    marginHorizontal: 2,
+  },
+  slot: {
+    width: 26,
+    height: 26,
+    borderRadius: 7,
+    borderWidth: 2,
+  },
+  slotEmpty: {
+    backgroundColor: colors.panel2,
+    borderColor: colors.muted,
+    borderStyle: 'dashed',
+  },
+  slotFilled: {
+    backgroundColor: colors.accentDim,
+    borderColor: colors.accent,
   },
   strip: {
     minHeight: 46,
