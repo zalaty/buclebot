@@ -5,24 +5,26 @@ import { colors } from '../theme';
 
 interface Props {
   onCommand: (cmd: Command) => void;
+  onRepeat: () => void;
+  canRepeat: boolean;
   disabled: boolean;
 }
 
-const BUTTONS: { cmd: Command; label: string; key: string; icon: string }[] = [
-  { cmd: 'F', label: 'Avanzar', key: 'W / ↑', icon: '▲' },
-  { cmd: 'L', label: 'Girar izq.', key: 'A / ←', icon: '↺' },
-  { cmd: 'R', label: 'Girar der.', key: 'D / →', icon: '↻' },
+const MOVE_BUTTONS: { id: string; cmd: Command; label: string; key: string; icon: string }[] = [
+  { id: 'move',   cmd: { type: 'move' },           label: 'Avanzar',    key: 'W / ↑', icon: '▲' },
+  { id: 'turn-L', cmd: { type: 'turn', dir: 'L' }, label: 'Girar izq.', key: 'A / ←', icon: '↺' },
+  { id: 'turn-R', cmd: { type: 'turn', dir: 'R' }, label: 'Girar der.', key: 'D / →', icon: '↻' },
 ];
 
-export default function CommandPalette({ onCommand, disabled }: Props) {
+export default function CommandPalette({ onCommand, onRepeat, canRepeat, disabled }: Props) {
   useEffect(() => {
     if (Platform.OS !== 'web') return;
 
     const handler = (e: KeyboardEvent) => {
       if (disabled) return;
-      if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') onCommand('F');
-      if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') onCommand('L');
-      if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') onCommand('R');
+      if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp')    onCommand({ type: 'move' });
+      if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft')  onCommand({ type: 'turn', dir: 'L' });
+      if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') onCommand({ type: 'turn', dir: 'R' });
     };
 
     window.addEventListener('keydown', handler);
@@ -31,9 +33,9 @@ export default function CommandPalette({ onCommand, disabled }: Props) {
 
   return (
     <View style={styles.palette}>
-      {BUTTONS.map(({ cmd, label, key, icon }) => (
+      {MOVE_BUTTONS.map(({ id, cmd, label, key, icon }) => (
         <Pressable
-          key={cmd}
+          key={id}
           style={({ pressed }) => [
             styles.button,
             pressed && styles.buttonPressed,
@@ -48,6 +50,24 @@ export default function CommandPalette({ onCommand, disabled }: Props) {
           {Platform.OS === 'web' && <Text style={styles.keyHint}>{key}</Text>}
         </Pressable>
       ))}
+
+      {/* Repeat button — structure command, visually distinct */}
+      <Pressable
+        style={({ pressed }) => [
+          styles.button,
+          styles.repeatButton,
+          pressed && styles.repeatButtonPressed,
+          (!canRepeat || disabled) && styles.buttonDisabled,
+        ]}
+        onPress={() => !disabled && canRepeat && onRepeat()}
+        accessibilityLabel="Repetir"
+        accessibilityRole="button"
+        disabled={!canRepeat || disabled}
+      >
+        <Text style={styles.repeatIcon}>⟳</Text>
+        <Text style={[styles.label, styles.repeatLabel]}>Repetir</Text>
+        {Platform.OS === 'web' && <Text style={styles.keyHint}> </Text>}
+      </Pressable>
     </View>
   );
 }
@@ -90,5 +110,21 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     fontSize: 10,
     color: colors.muted,
+  },
+  repeatButton: {
+    borderColor: 'rgba(56,225,198,0.30)',
+    backgroundColor: 'rgba(56,225,198,0.06)',
+  },
+  repeatButtonPressed: {
+    borderColor: colors.accent,
+    backgroundColor: 'rgba(56,225,198,0.14)',
+    transform: [{ translateY: 1 }],
+  },
+  repeatIcon: {
+    fontSize: 22,
+    color: colors.accent,
+  },
+  repeatLabel: {
+    color: colors.accent,
   },
 });

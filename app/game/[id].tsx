@@ -15,19 +15,45 @@ import CommandPalette from '../../src/components/CommandPalette';
 import CommandStrip from '../../src/components/CommandStrip';
 import DroneSprite from '../../src/components/DroneSprite';
 import Grid from '../../src/components/Grid';
+import LoopDraftPanel from '../../src/components/LoopDraftPanel';
 import { runSequence } from '../../src/engine/executor';
 import { LEVELS } from '../../src/engine/levels';
 import { getScore } from '../../src/engine/scoring';
 import { Command, DroneState, Level } from '../../src/engine/types';
+import { countCommands, unroll } from '../../src/engine/unroll';
 import { colors } from '../../src/theme';
+import { groupLevelsByWorld, levelWorld } from '../../src/utils/levelGroups';
 
 const sleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
+
+// DEBUG: programa pre-cargado para visualizar el pintado de bucles en CommandStrip.
+// Eliminar junto con el nivel 'debug-loop' antes del MVP.
+const DEBUG_LOOP_PROGRAM: Command[] = [
+  {
+    type: 'loop',
+    times: 3,
+    body: [
+      { type: 'move' },
+      { type: 'loop', times: 2, body: [{ type: 'turn', dir: 'R' }] },
+    ],
+  },
+  { type: 'move' },
+];
 
 type GamePhase = 'idle' | 'running' | 'crashed' | 'won';
 
 interface ResultState {
   used: number;
   score: 'optimal' | 'completed';
+}
+
+interface LoopDraft {
+  times: number;
+  body: Command[];
+  /** null = new loop being created; number = index in program where this loop was reopened from */
+  editingIndex: number | null;
+  /** original state saved so cancelLoop can restore it when editing */
+  original: { times: number; body: Command[] } | null;
 }
 
 export default function GameScreen() {
@@ -39,6 +65,7 @@ export default function GameScreen() {
   const level: Level | undefined = LEVELS.find((l) => l.id === id);
 
   const [program, setProgram] = useState<Command[]>([]);
+  const [loopDraft, setLoopDraft] = useState<LoopDraft | null>(null);
   const [droneState, setDroneState] = useState<DroneState>(
     level ? { ...level.start } : { x: 0, y: 0, dir: 1 },
   );
@@ -60,7 +87,8 @@ export default function GameScreen() {
 
   const resetLevel = useCallback(() => {
     if (!level) return;
-    setProgram([]);
+    setProgram(level.id === 'debug-loop' ? DEBUG_LOOP_PROGRAM : []);
+    setLoopDraft(null);
     setDroneState({ ...level.start });
     setPhase('idle');
     setActiveIdx(-1);
@@ -74,19 +102,134 @@ export default function GameScreen() {
     resetLevel();
   }, [id, resetLevel]);
 
+  // Total authoring cost including any open draft
+  const totalCommandCount =
+    countCommands(program) + (loopDraft ? 1 + countCommands(loopDraft.body) : 0);
+
+  const isOverBudget = (extra: number) =>
+    level?.budget !== undefined && totalCommandCount + extra > level.budget;
+
+  // Add a move/turn command — routes into draft body when a draft is open
   const addCommand = useCallback(
     (cmd: Command) => {
       if (phase === 'running') return;
-      setProgram((prev) => [...prev, cmd]);
       setToast('');
+      setToastWarn(false);
+
+      if (loopDraft !== null) {
+        if (isOverBudget(1)) {
+          setToast('Límite de comandos alcanzado.');
+          setToastWarn(true);
+          return;
+        }
+        setLoopDraft((prev) => (prev ? { ...prev, body: [...prev.body, cmd] } : prev));
+      } else {
+        if (isOverBudget(1)) {
+          setToast('Límite de comandos alcanzado.');
+          setToastWarn(true);
+          return;
+        }
+        setProgram((prev) => [...prev, cmd]);
+      }
     },
-    [phase],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [phase, loopDraft, totalCommandCount, level],
   );
+
+  // Open a new loop draft
+  const openLoop = useCallback(() => {
+    if (phase === 'running' || loopDraft !== null) return;
+    // Need room for at least the loop node (1) + one body command (1) = 2
+    if (level?.budget !== undefined && totalCommandCount + 2 > level.budget) {
+      setToast('No hay sitio para un bucle (presupuesto agotado).');
+      setToastWarn(true);
+      return;
+    }
+    setToast('');
+    setToastWarn(false);
+    setLoopDraft({ times: 2, body: [], editingIndex: null, original: null });
+  }, [phase, loopDraft, totalCommandCount, level]);
+
+  // Seal the draft, re-inserting at the original position when editing
+  const closeLoop = useCallback(() => {
+    if (!loopDraft || loopDraft.body.length === 0) return;
+    const newLoop: Command = { type: 'loop', times: loopDraft.times, body: loopDraft.body };
+    setProgram((prev) => {
+      if (loopDraft.editingIndex !== null) {
+        const idx = Math.min(loopDraft.editingIndex, prev.length);
+        return [...prev.slice(0, idx), newLoop, ...prev.slice(idx)];
+      }
+      return [...prev, newLoop];
+    });
+    setLoopDraft(null);
+    setToast('');
+    setToastWarn(false);
+  }, [loopDraft]);
+
+  // Cancel: restore original loop when editing, otherwise just discard
+  const cancelLoop = useCallback(() => {
+    if (loopDraft && loopDraft.editingIndex !== null && loopDraft.original) {
+      const { editingIndex, original } = loopDraft;
+      const restored: Command = { type: 'loop', times: original.times, body: original.body };
+      setProgram((prev) => {
+        const idx = Math.min(editingIndex, prev.length);
+        return [...prev.slice(0, idx), restored, ...prev.slice(idx)];
+      });
+    }
+    setLoopDraft(null);
+    setToast('');
+    setToastWarn(false);
+  }, [loopDraft]);
+
+  // Delete the loop entirely — it's already out of program since openLoopEdit removed it
+  const deleteLoop = useCallback(() => {
+    setLoopDraft(null);
+    setToast('');
+    setToastWarn(false);
+  }, []);
+
+  // Reopen a sealed loop from the strip for editing
+  const openLoopEdit = useCallback(
+    (index: number) => {
+      if (phase === 'running' || loopDraft !== null) return;
+      const cmd = program[index];
+      if (!cmd || cmd.type !== 'loop') return;
+      setProgram((prev) => prev.filter((_, i) => i !== index));
+      setLoopDraft({
+        times: cmd.times,
+        body: [...cmd.body],
+        editingIndex: index,
+        original: { times: cmd.times, body: [...cmd.body] },
+      });
+      setToast('');
+      setToastWarn(false);
+    },
+    [phase, loopDraft, program],
+  );
+
+  // Remove a single command from the draft body
+  const removeBodyItem = useCallback((index: number) => {
+    setLoopDraft((prev) =>
+      prev ? { ...prev, body: prev.body.filter((_, i) => i !== index) } : prev,
+    );
+  }, []);
+
+  const changeLoopTimes = useCallback((n: number) => {
+    setLoopDraft((prev) => (prev ? { ...prev, times: n } : prev));
+  }, []);
 
   const undoLast = useCallback(() => {
     if (phase === 'running') return;
-    setProgram((prev) => prev.slice(0, -1));
-  }, [phase]);
+    if (loopDraft !== null) {
+      if (loopDraft.body.length > 0) {
+        setLoopDraft((prev) => (prev ? { ...prev, body: prev.body.slice(0, -1) } : prev));
+      } else {
+        cancelLoop(); // restores original if editing, discards if new
+      }
+    } else {
+      setProgram((prev) => prev.slice(0, -1));
+    }
+  }, [phase, loopDraft, cancelLoop]);
 
   const executeProgram = useCallback(async () => {
     if (!level || phase === 'running' || program.length === 0) return;
@@ -101,7 +244,7 @@ export default function GameScreen() {
     setActiveIdx(-1);
     await sleep(120);
 
-    const gen = runSequence(level, program);
+    const gen = runSequence(level, unroll(program));
     let cmdIndex = 0;
 
     for await (const event of gen) {
@@ -124,7 +267,7 @@ export default function GameScreen() {
         return;
       } else if (event.type === 'goal') {
         await sleep(260);
-        const used = program.length;
+        const used = countCommands(program);
         const score = getScore(used, level.par);
         setResult({ used, score });
         setPhase('won');
@@ -147,13 +290,13 @@ export default function GameScreen() {
 
   const goNextLevel = useCallback(() => {
     if (!level) return;
-    const currentIndex = LEVELS.findIndex((l) => l.id === level.id);
-    const nextLevel = LEVELS[currentIndex + 1];
     setShowModal(false);
+    const group = groupLevelsByWorld(LEVELS).find((g) => g.world === levelWorld(level));
+    const currentIndex = group ? group.levels.findIndex((l) => l.id === level.id) : -1;
+    const nextLevel = group && currentIndex >= 0 ? group.levels[currentIndex + 1] : undefined;
     if (nextLevel) {
       router.replace(`/game/${nextLevel.id}`);
     } else {
-      // All levels done — go back to select
       router.replace('/');
     }
   }, [level, router]);
@@ -168,10 +311,16 @@ export default function GameScreen() {
     );
   }
 
-  const isLastLevel = LEVELS[LEVELS.length - 1].id === level.id;
   const isRunning = phase === 'running';
+  const canRepeat = !isRunning && loopDraft === null;
 
-  const levelIndex = LEVELS.findIndex((l) => l.id === level.id);
+  const world = levelWorld(level);
+  const worldGroup = groupLevelsByWorld(LEVELS).find((g) => g.world === world);
+  const levelIndexInWorld = worldGroup ? worldGroup.levels.findIndex((l) => l.id === level.id) : -1;
+  const isDebugLevel = levelIndexInWorld === -1;
+  const isLastLevel = isDebugLevel
+    ? true
+    : worldGroup!.levels[worldGroup!.levels.length - 1].id === level.id;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -180,7 +329,9 @@ export default function GameScreen() {
         <View style={styles.header}>
           <Text style={styles.eyebrow}>Sector</Text>
           <Text style={styles.levelTag}>
-            Nivel {levelIndex + 1} / {LEVELS.length}
+            {isDebugLevel
+              ? 'Nivel de depuración'
+              : `Mundo ${world} · Nivel ${levelIndexInWorld + 1} / ${worldGroup!.levels.length}`}
           </Text>
         </View>
         <Text style={styles.intro}>{level.intro}</Text>
@@ -208,17 +359,40 @@ export default function GameScreen() {
             <CommandStrip
               program={program}
               activeIndex={activeIdx}
-              commandCount={program.length}
+              commandCount={totalCommandCount}
               par={level.par}
+              budget={level.budget}
+              onTapLoop={!isRunning && loopDraft === null ? openLoopEdit : undefined}
             />
 
-            <CommandPalette onCommand={addCommand} disabled={isRunning} />
+            {loopDraft && (
+              <LoopDraftPanel
+                times={loopDraft.times}
+                body={loopDraft.body}
+                isEditing={loopDraft.editingIndex !== null}
+                onChangeTimes={changeLoopTimes}
+                onRemoveBodyItem={removeBodyItem}
+                onClose={closeLoop}
+                onCancel={cancelLoop}
+                onDelete={deleteLoop}
+              />
+            )}
+
+            <CommandPalette
+              onCommand={addCommand}
+              onRepeat={openLoop}
+              canRepeat={canRepeat}
+              disabled={isRunning}
+            />
 
             <View style={styles.actionRow}>
               <Pressable
-                style={[styles.runBtn, isRunning && styles.runBtnDisabled]}
+                style={[
+                  styles.runBtn,
+                  (isRunning || loopDraft !== null) && styles.runBtnDisabled,
+                ]}
                 onPress={executeProgram}
-                disabled={isRunning}
+                disabled={isRunning || loopDraft !== null}
                 accessibilityRole="button"
                 accessibilityLabel="Ejecutar programa"
               >

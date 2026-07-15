@@ -7,10 +7,15 @@ export interface DroneState {
   dir: Direction;
 }
 
-export type Command = 'F' | 'L' | 'R';
+export interface MoveCommand { type: 'move' }
+export interface TurnCommand { type: 'turn'; dir: 'L' | 'R' }
+export interface LoopCommand { type: 'loop'; times: number; body: Command[] }
+export type Command = MoveCommand | TurnCommand | LoopCommand;
 
 export interface Level {
   id: string;
+  /** World this level belongs to (1 = sequences, 2 = loops, …). Omitted on legacy World 1 levels. */
+  world?: number;
   cols: number;
   rows: number;
   start: { x: number; y: number; dir: Direction };
@@ -25,6 +30,10 @@ export interface Level {
   intro: string;
   /** Shown on level completion (used for loop teaser on level 5) */
   outro?: string;
+  /** Max atomic commands allowed before the run is rejected (World 2+) */
+  budget?: number;
+  /** Canonical solution used for validation/hints (World 2+) */
+  solution?: Command[];
 }
 
 // ---- StepEvent union ----
