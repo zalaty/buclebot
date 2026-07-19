@@ -4,6 +4,10 @@ import { StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { colors } from '../src/theme';
 
+export const unstable_settings = {
+  initialRouteName: 'index',
+};
+
 export default function RootLayout() {
   return (
     <SafeAreaProvider>

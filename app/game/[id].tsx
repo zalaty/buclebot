@@ -7,7 +7,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,6 +25,12 @@ import { groupLevelsByWorld, levelWorld } from '../../src/utils/levelGroups';
 
 const sleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
 
+// Fixed grid panel width: layout is always single-column (stacked), so the
+// grid never needs to react to viewport width. A JS-measured width isn't an
+// option here — Expo's static web export doesn't reliably apply styles
+// computed from a measured width on first render (expo/expo#40073).
+const GRID_PANEL_WIDTH = 320;
+
 // DEBUG: programa pre-cargado para visualizar el pintado de bucles en CommandStrip.
 // Eliminar junto con el nivel 'debug-loop' antes del MVP.
 const DEBUG_LOOP_PROGRAM: Command[] = [
@@ -39,6 +44,10 @@ const DEBUG_LOOP_PROGRAM: Command[] = [
   },
   { type: 'move' },
 ];
+
+export function generateStaticParams() {
+  return LEVELS.filter((l) => l.id !== 'debug-loop').map((l) => ({ id: l.id }));
+}
 
 type GamePhase = 'idle' | 'running' | 'crashed' | 'won';
 
@@ -59,7 +68,6 @@ interface LoopDraft {
 export default function GameScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { width } = useWindowDimensions();
 
   // Resolve level
   const level: Level | undefined = LEVELS.find((l) => l.id === id);
@@ -78,11 +86,8 @@ export default function GameScreen() {
 
   const runningRef = useRef(false);
 
-  // Available width for the grid panel
-  const isWide = width >= 640;
-  const gridPanelWidth = isWide ? Math.min(360, width * 0.45) : width - 32;
   const cellSize = level
-    ? Math.max(36, Math.min(74, Math.floor(gridPanelWidth / level.cols)))
+    ? Math.max(36, Math.min(74, Math.floor(GRID_PANEL_WIDTH / level.cols)))
     : 50;
 
   const resetLevel = useCallback(() => {
@@ -336,15 +341,15 @@ export default function GameScreen() {
         </View>
         <Text style={styles.intro}>{level.intro}</Text>
 
-        {/* Wide layout: grid + strip side by side */}
-        <View style={[styles.gameArea, isWide && styles.gameAreaWide]}>
+        {/* Always stacked: grid, then program strip, then controls */}
+        <View style={styles.gameArea}>
           {/* Grid area */}
           <View style={styles.gridContainer}>
             <View style={{ position: 'relative', width: cellSize * level.cols, height: cellSize * level.rows }}>
               <Grid
                 level={level}
                 droneState={droneState}
-                availableWidth={gridPanelWidth}
+                availableWidth={GRID_PANEL_WIDTH}
               />
               <DroneSprite
                 droneState={droneState}
@@ -355,7 +360,7 @@ export default function GameScreen() {
           </View>
 
           {/* Strip + controls area */}
-          <View style={[styles.controlsArea, isWide && styles.controlsAreaWide]}>
+          <View style={styles.controlsArea}>
             <CommandStrip
               program={program}
               activeIndex={activeIdx}
@@ -517,11 +522,6 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     gap: 16,
   },
-  gameAreaWide: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 24,
-  },
   gridContainer: {
     alignItems: 'center',
     backgroundColor: colors.panel,
@@ -533,9 +533,6 @@ const styles = StyleSheet.create({
   },
   controlsArea: {
     flex: 1,
-  },
-  controlsAreaWide: {
-    minWidth: 220,
   },
   actionRow: {
     flexDirection: 'row',
