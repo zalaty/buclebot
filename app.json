@@ -2,6 +2,7 @@
   "expo": {
     "name": "BucleBot",
     "slug": "buclebot",
+    "owner": "zalaty",
     "version": "1.0.0",
     "scheme": "buclebot",
     "orientation": "portrait",
@@ -11,6 +12,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.zalaty.buclebot",
       "adaptiveIcon": {
         "backgroundColor": "#0E1116",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -27,6 +29,12 @@
     "plugins": [
       "expo-router",
       "expo-web-browser"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a93f75a1-3222-42a1-807b-9891439afbb9"
+      }
+    }
   }
 }
