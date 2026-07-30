@@ -51,6 +51,9 @@ export function generateStaticParams() {
 
 type GamePhase = 'idle' | 'running' | 'crashed' | 'won';
 
+// Max depth of the draft stack: an outer loop draft plus one nested loop draft inside it.
+const MAX_NEST_DEPTH = 2;
+
 interface ResultState {
   used: number;
   score: 'optimal' | 'completed';
@@ -73,7 +76,10 @@ export default function GameScreen() {
   const level: Level | undefined = LEVELS.find((l) => l.id === id);
 
   const [program, setProgram] = useState<Command[]>([]);
-  const [loopDraft, setLoopDraft] = useState<LoopDraft | null>(null);
+  // Stack of open loop drafts: index 0 is the outermost, the last entry is the
+  // active/innermost cajón — the one commands and Repetir/Cerrar act on.
+  const [draftStack, setDraftStack] = useState<LoopDraft[]>([]);
+  const activeDraft = draftStack.length > 0 ? draftStack[draftStack.length - 1] : null;
   const [droneState, setDroneState] = useState<DroneState>(
     level ? { ...level.start } : { x: 0, y: 0, dir: 1 },
   );
@@ -93,7 +99,7 @@ export default function GameScreen() {
   const resetLevel = useCallback(() => {
     if (!level) return;
     setProgram(level.id === 'debug-loop' ? DEBUG_LOOP_PROGRAM : []);
-    setLoopDraft(null);
+    setDraftStack([]);
     setDroneState({ ...level.start });
     setPhase('idle');
     setActiveIdx(-1);
@@ -107,43 +113,44 @@ export default function GameScreen() {
     resetLevel();
   }, [id, resetLevel]);
 
-  // Total authoring cost including any open draft
-  const totalCommandCount =
-    countCommands(program) + (loopDraft ? 1 + countCommands(loopDraft.body) : 0);
+  // Total authoring cost including any open drafts (outer + nested)
+  const draftCost = draftStack.reduce((sum, d) => sum + 1 + countCommands(d.body), 0);
+  const totalCommandCount = countCommands(program) + draftCost;
 
   const isOverBudget = (extra: number) =>
     level?.budget !== undefined && totalCommandCount + extra > level.budget;
 
-  // Add a move/turn command — routes into draft body when a draft is open
+  // Add a move/turn command — routes into the active (innermost) draft body when one is open
   const addCommand = useCallback(
     (cmd: Command) => {
       if (phase === 'running') return;
       setToast('');
       setToastWarn(false);
 
-      if (loopDraft !== null) {
-        if (isOverBudget(1)) {
-          setToast('Límite de comandos alcanzado.');
-          setToastWarn(true);
-          return;
-        }
-        setLoopDraft((prev) => (prev ? { ...prev, body: [...prev.body, cmd] } : prev));
+      if (isOverBudget(1)) {
+        setToast('Límite de comandos alcanzado.');
+        setToastWarn(true);
+        return;
+      }
+
+      if (activeDraft !== null) {
+        setDraftStack((prev) => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          next[next.length - 1] = { ...last, body: [...last.body, cmd] };
+          return next;
+        });
       } else {
-        if (isOverBudget(1)) {
-          setToast('Límite de comandos alcanzado.');
-          setToastWarn(true);
-          return;
-        }
         setProgram((prev) => [...prev, cmd]);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [phase, loopDraft, totalCommandCount, level],
+    [phase, activeDraft, totalCommandCount, level],
   );
 
-  // Open a new loop draft
+  // Open a new loop draft — nests inside the active draft if one is already open
   const openLoop = useCallback(() => {
-    if (phase === 'running' || loopDraft !== null) return;
+    if (phase === 'running' || draftStack.length >= MAX_NEST_DEPTH) return;
     // Need room for at least the loop node (1) + one body command (1) = 2
     if (level?.budget !== undefined && totalCommandCount + 2 > level.budget) {
       setToast('No hay sitio para un bucle (presupuesto agotado).');
@@ -152,89 +159,184 @@ export default function GameScreen() {
     }
     setToast('');
     setToastWarn(false);
-    setLoopDraft({ times: 2, body: [], editingIndex: null, original: null });
-  }, [phase, loopDraft, totalCommandCount, level]);
+    setDraftStack((prev) => [...prev, { times: 2, body: [], editingIndex: null, original: null }]);
+  }, [phase, draftStack, totalCommandCount, level]);
 
-  // Seal the draft, re-inserting at the original position when editing
+  // Seal the active (innermost) draft. If it's nested, fold it back into the
+  // parent draft's body (at its original position when it was reopened via
+  // openNestedLoopEdit, otherwise appended) and hand focus back to the
+  // parent. Otherwise, insert it into the program (at the original position
+  // when editing).
   const closeLoop = useCallback(() => {
-    if (!loopDraft || loopDraft.body.length === 0) return;
-    const newLoop: Command = { type: 'loop', times: loopDraft.times, body: loopDraft.body };
-    setProgram((prev) => {
-      if (loopDraft.editingIndex !== null) {
-        const idx = Math.min(loopDraft.editingIndex, prev.length);
-        return [...prev.slice(0, idx), newLoop, ...prev.slice(idx)];
-      }
-      return [...prev, newLoop];
-    });
-    setLoopDraft(null);
-    setToast('');
-    setToastWarn(false);
-  }, [loopDraft]);
+    if (draftStack.length === 0) return;
+    const draft = draftStack[draftStack.length - 1];
+    if (draft.body.length === 0) return;
+    const newLoop: Command = { type: 'loop', times: draft.times, body: draft.body };
 
-  // Cancel: restore original loop when editing, otherwise just discard
-  const cancelLoop = useCallback(() => {
-    if (loopDraft && loopDraft.editingIndex !== null && loopDraft.original) {
-      const { editingIndex, original } = loopDraft;
-      const restored: Command = { type: 'loop', times: original.times, body: original.body };
+    if (draftStack.length > 1) {
+      const parent = draftStack[draftStack.length - 2];
+      const parentBody =
+        draft.editingIndex !== null
+          ? (() => {
+              const idx = Math.min(draft.editingIndex!, parent.body.length);
+              return [...parent.body.slice(0, idx), newLoop, ...parent.body.slice(idx)];
+            })()
+          : [...parent.body, newLoop];
+      const updatedParent: LoopDraft = { ...parent, body: parentBody };
+      setDraftStack([...draftStack.slice(0, draftStack.length - 2), updatedParent]);
+    } else {
       setProgram((prev) => {
-        const idx = Math.min(editingIndex, prev.length);
-        return [...prev.slice(0, idx), restored, ...prev.slice(idx)];
+        if (draft.editingIndex !== null) {
+          const idx = Math.min(draft.editingIndex, prev.length);
+          return [...prev.slice(0, idx), newLoop, ...prev.slice(idx)];
+        }
+        return [...prev, newLoop];
       });
+      setDraftStack([]);
     }
-    setLoopDraft(null);
     setToast('');
     setToastWarn(false);
-  }, [loopDraft]);
+  }, [draftStack]);
 
-  // Delete the loop entirely — it's already out of program since openLoopEdit removed it
+  // Cancel the active (innermost) draft. If nested, restore it into the
+  // parent's body when it was reopened for editing (or just drop it if it was
+  // brand new) and return focus to the parent. Otherwise restore the
+  // original loop when editing, or discard the new loop entirely.
+  const cancelLoop = useCallback(() => {
+    if (draftStack.length === 0) return;
+
+    if (draftStack.length > 1) {
+      const draft = draftStack[draftStack.length - 1];
+      const parent = draftStack[draftStack.length - 2];
+      if (draft.editingIndex !== null && draft.original) {
+        const restored: Command = {
+          type: 'loop',
+          times: draft.original.times,
+          body: draft.original.body,
+        };
+        const idx = Math.min(draft.editingIndex, parent.body.length);
+        const restoredParent: LoopDraft = {
+          ...parent,
+          body: [...parent.body.slice(0, idx), restored, ...parent.body.slice(idx)],
+        };
+        setDraftStack([...draftStack.slice(0, draftStack.length - 2), restoredParent]);
+      } else {
+        setDraftStack(draftStack.slice(0, -1));
+      }
+    } else {
+      const draft = draftStack[0];
+      if (draft.editingIndex !== null && draft.original) {
+        const { editingIndex, original } = draft;
+        const restored: Command = { type: 'loop', times: original.times, body: original.body };
+        setProgram((prev) => {
+          const idx = Math.min(editingIndex, prev.length);
+          return [...prev.slice(0, idx), restored, ...prev.slice(idx)];
+        });
+      }
+      setDraftStack([]);
+    }
+    setToast('');
+    setToastWarn(false);
+  }, [draftStack]);
+
+  // Delete the active (innermost) draft entirely. It's already out of its
+  // container (program or parent body) since openLoopEdit/openNestedLoopEdit
+  // removed it — so this just pops the stack, handing focus back to the
+  // parent (if any) without restoring anything.
   const deleteLoop = useCallback(() => {
-    setLoopDraft(null);
+    setDraftStack(draftStack.slice(0, -1));
     setToast('');
     setToastWarn(false);
-  }, []);
+  }, [draftStack]);
 
-  // Reopen a sealed loop from the strip for editing
+  // Reopen a sealed top-level loop from the strip for editing
   const openLoopEdit = useCallback(
     (index: number) => {
-      if (phase === 'running' || loopDraft !== null) return;
+      if (phase === 'running' || draftStack.length > 0) return;
       const cmd = program[index];
       if (!cmd || cmd.type !== 'loop') return;
       setProgram((prev) => prev.filter((_, i) => i !== index));
-      setLoopDraft({
-        times: cmd.times,
-        body: [...cmd.body],
-        editingIndex: index,
-        original: { times: cmd.times, body: [...cmd.body] },
-      });
+      setDraftStack([
+        {
+          times: cmd.times,
+          body: [...cmd.body],
+          editingIndex: index,
+          original: { times: cmd.times, body: [...cmd.body] },
+        },
+      ]);
       setToast('');
       setToastWarn(false);
     },
-    [phase, loopDraft, program],
+    [phase, draftStack, program],
   );
 
-  // Remove a single command from the draft body
+  // Reopen a sealed loop that's nested inside the active draft's own body —
+  // same idea as openLoopEdit, but the "container" is the active draft's body
+  // instead of the top-level program. Only allowed while there's still room
+  // to nest one more level (the reopened loop becomes the new active draft).
+  const openNestedLoopEdit = useCallback(
+    (bodyIndex: number) => {
+      if (phase === 'running' || draftStack.length === 0 || draftStack.length >= MAX_NEST_DEPTH) {
+        return;
+      }
+      const parent = draftStack[draftStack.length - 1];
+      const cmd = parent.body[bodyIndex];
+      if (!cmd || cmd.type !== 'loop') return;
+
+      const updatedParent: LoopDraft = {
+        ...parent,
+        body: parent.body.filter((_, i) => i !== bodyIndex),
+      };
+      const newDraft: LoopDraft = {
+        times: cmd.times,
+        body: [...cmd.body],
+        editingIndex: bodyIndex,
+        original: { times: cmd.times, body: [...cmd.body] },
+      };
+      setDraftStack([...draftStack.slice(0, draftStack.length - 1), updatedParent, newDraft]);
+      setToast('');
+      setToastWarn(false);
+    },
+    [phase, draftStack],
+  );
+
+  // Remove a single command from the active (innermost) draft's body
   const removeBodyItem = useCallback((index: number) => {
-    setLoopDraft((prev) =>
-      prev ? { ...prev, body: prev.body.filter((_, i) => i !== index) } : prev,
-    );
+    setDraftStack((prev) => {
+      if (prev.length === 0) return prev;
+      const next = [...prev];
+      const last = next[next.length - 1];
+      next[next.length - 1] = { ...last, body: last.body.filter((_, i) => i !== index) };
+      return next;
+    });
   }, []);
 
   const changeLoopTimes = useCallback((n: number) => {
-    setLoopDraft((prev) => (prev ? { ...prev, times: n } : prev));
+    setDraftStack((prev) => {
+      if (prev.length === 0) return prev;
+      const next = [...prev];
+      next[next.length - 1] = { ...next[next.length - 1], times: n };
+      return next;
+    });
   }, []);
 
   const undoLast = useCallback(() => {
     if (phase === 'running') return;
-    if (loopDraft !== null) {
-      if (loopDraft.body.length > 0) {
-        setLoopDraft((prev) => (prev ? { ...prev, body: prev.body.slice(0, -1) } : prev));
+    if (activeDraft !== null) {
+      if (activeDraft.body.length > 0) {
+        setDraftStack((prev) => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          next[next.length - 1] = { ...last, body: last.body.slice(0, -1) };
+          return next;
+        });
       } else {
-        cancelLoop(); // restores original if editing, discards if new
+        cancelLoop(); // pops nested draft, or restores/discards the outer one
       }
     } else {
       setProgram((prev) => prev.slice(0, -1));
     }
-  }, [phase, loopDraft, cancelLoop]);
+  }, [phase, activeDraft, cancelLoop]);
 
   const executeProgram = useCallback(async () => {
     if (!level || phase === 'running' || program.length === 0) return;
@@ -317,7 +419,31 @@ export default function GameScreen() {
   }
 
   const isRunning = phase === 'running';
-  const canRepeat = !isRunning && loopDraft === null;
+  const canRepeat = !isRunning && draftStack.length < MAX_NEST_DEPTH;
+
+  // Recursively render the draft stack: each level wraps the next, with only
+  // the innermost (active) one interactive — the rest show as paused context.
+  const renderDraftStack = (idx: number): React.ReactNode => {
+    if (idx >= draftStack.length) return null;
+    const draft = draftStack[idx];
+    return (
+      <LoopDraftPanel
+        key={idx}
+        times={draft.times}
+        body={draft.body}
+        isEditing={draft.editingIndex !== null}
+        active={idx === draftStack.length - 1}
+        onChangeTimes={changeLoopTimes}
+        onRemoveBodyItem={removeBodyItem}
+        onClose={closeLoop}
+        onCancel={cancelLoop}
+        onDelete={deleteLoop}
+        onTapBodyLoop={draftStack.length < MAX_NEST_DEPTH ? openNestedLoopEdit : undefined}
+      >
+        {renderDraftStack(idx + 1)}
+      </LoopDraftPanel>
+    );
+  };
 
   const world = levelWorld(level);
   const worldGroup = groupLevelsByWorld(LEVELS).find((g) => g.world === world);
@@ -367,21 +493,10 @@ export default function GameScreen() {
               commandCount={totalCommandCount}
               par={level.par}
               budget={level.budget}
-              onTapLoop={!isRunning && loopDraft === null ? openLoopEdit : undefined}
+              onTapLoop={!isRunning && draftStack.length === 0 ? openLoopEdit : undefined}
             />
 
-            {loopDraft && (
-              <LoopDraftPanel
-                times={loopDraft.times}
-                body={loopDraft.body}
-                isEditing={loopDraft.editingIndex !== null}
-                onChangeTimes={changeLoopTimes}
-                onRemoveBodyItem={removeBodyItem}
-                onClose={closeLoop}
-                onCancel={cancelLoop}
-                onDelete={deleteLoop}
-              />
-            )}
+            {renderDraftStack(0)}
 
             <CommandPalette
               onCommand={addCommand}
@@ -394,10 +509,10 @@ export default function GameScreen() {
               <Pressable
                 style={[
                   styles.runBtn,
-                  (isRunning || loopDraft !== null) && styles.runBtnDisabled,
+                  (isRunning || draftStack.length > 0) && styles.runBtnDisabled,
                 ]}
                 onPress={executeProgram}
-                disabled={isRunning || loopDraft !== null}
+                disabled={isRunning || draftStack.length > 0}
                 accessibilityRole="button"
                 accessibilityLabel="Ejecutar programa"
               >
