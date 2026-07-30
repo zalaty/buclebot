@@ -214,6 +214,41 @@ export const LEVELS: Level[] = [
       { type: 'move' },
     ],
   },
+  {
+    world: 2,
+    id: 'w2-6',
+    cols: 5,
+    rows: 5,
+    start: { x: 0, y: 0, dir: 1 },
+    goal: { x: 0, y: 2 },
+    // Marco cuadrado hueco (anillo de 1 celda de ancho) con una única celda
+    // tapiada justo detrás del punto de partida — (0,1) — para que "dar la
+    // vuelta y volver" no sea una opción: desde el inicio solo se puede ir
+    // hacia delante. El resto del anillo queda intacto para recorrerlo casi
+    // entero (3 lados completos + parte del 4º) hasta la baliza.
+    open: [
+      [0, 0], [1, 0], [2, 0], [3, 0], [4, 0],
+      [4, 1],
+      [0, 2], [4, 2],
+      [0, 3], [4, 3],
+      [0, 4], [1, 4], [2, 4], [3, 4], [4, 4],
+    ],
+    budget: 5,
+    par: 4,
+    intro: '⭐ RETO: un bucle… dentro de otro bucle. Para valientes.',
+    outro:
+      'Bucle dentro de bucle: dominado. Pero un bucle repite siempre igual… ¿y si el dron tuviera que decidir por sí mismo qué camino tomar? Eso son los CONDICIONALES — la próxima frontera te espera.',
+    solution: [
+      {
+        type: 'loop',
+        times: 4,
+        body: [
+          { type: 'loop', times: 4, body: [{ type: 'move' }] },
+          { type: 'turn', dir: 'R' },
+        ],
+      },
+    ],
+  },
   // DEBUG — nivel temporal para probar el pintado de bucles. Eliminar antes del MVP.
   {
     id: 'debug-loop',
