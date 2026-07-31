@@ -1,0 +1,40 @@
+name: Deploy Web to Hostinger
+on:
+  push:
+    branches:
+      - main
+jobs:
+  deploy-web:
+    name: Export and deploy web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Export web (static)
+        run: npx expo export --platform web
+
+      - name: Deploy to Hostinger via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./dist/
+          server-dir: ./
+          # La cuenta FTP ya apunta a .../public_html/buclebot, así que el
+          # destino es la raíz de esa cuenta (./), no una subcarpeta.
+          # Preserva el .htaccess que ya subiste manualmente (no lo borra)
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/.htaccess
