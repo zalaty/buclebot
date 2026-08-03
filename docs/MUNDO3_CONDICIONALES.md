@@ -101,3 +101,41 @@ el 5 (condicional en bucle) como pieza aparte, después, por su alta complejidad
 **Simetría con el Mundo 2:** allí el Nivel 1 reciclaba el tedio para vender el bucle;
 aquí el Nivel 4 recicla el tedio para vender el condicional-en-bucle. El Nivel 5 es la
 síntesis de los tres pilares del juego.
+
+## 9. Interfaz del condicional
+
+Estilo Scratch (coherente con los bucles), con **cajón de dos zonas**:
+1. El alumno pulsa un botón nuevo **"SI..."** (junto a Avanzar / Girar / Recoger / Repetir).
+2. Se abre un cajón condicional. Arriba, un **selector de condición flexible**:
+   el alumno elige entre **"SI hay moneda"** o **"SI hay bomba"**.
+3. El cajón tiene dos zonas donde meter comandos tocando (como en el bucle):
+   - **ENTONCES** (siempre visible): qué hacer si se cumple la condición.
+   - **SI NO** (opcional): aparece con un botón "+ añadir SI NO"; qué hacer si no.
+4. Al cerrar, queda sellado en la tira: `SI moneda [recoge] SI NO [avanza]`.
+
+**Decisiones de interfaz:**
+- La rama **SI NO es opcional** (los niveles 1-2 usan solo ENTONCES; el SI NO se
+  introduce en el Nivel 3). La interfaz crece con el concepto.
+- El selector de condición es **flexible** desde el principio (moneda / bomba).
+- Comando nuevo en la paleta: **"Recoger"** (acción atómica que va en el ENTONCES).
+
+## 10. Plan técnico (orden de construcción, de dentro hacia afuera)
+1. **Modelo de datos:** extender `Command` con `IfCommand` (condición, `then: Command[]`,
+   `else?: Command[]`) y añadir comando atómico `collect`. Extender `Level` para
+   monedas/bombas y objetivo "recoger todas". La condición referencia tipo de objeto.
+2. **Motor:** el executor evalúa la condición (contenido de la casilla actual) y
+   ejecuta la rama correcta; añade la acción `collect`; nueva condición de victoria
+   (todas las monedas recogidas); pisar/recoger bomba = perder (como el choque).
+   El `unroll` debe contemplar condicionales (ojo: un condicional NO se puede
+   "desenrollar" a ciegas como un bucle, porque depende del estado en ejecución —
+   se evalúa en tiempo de ejecución, no antes).
+3. **Componentes:** pintar monedas y bombas en la rejilla; contador de monedas.
+4. **UI del condicional:** el cajón de dos zonas (ENTONCES / SI NO).
+5. **Niveles:** los 4 como datos, validados por código.
+
+**Nota técnica importante (unroll vs condicionales):** los bucles se desenrollan ANTES
+de ejecutar (su repetición es fija). Los condicionales NO: dependen de lo que el dron
+encuentre en cada casilla en tiempo de ejecución. Esto significa que el executor deja
+de consumir una lista plana pre-desenrollada y pasa a **evaluar el árbol durante la
+ejecución** (o un enfoque híbrido). Es el cambio de motor más importante del Mundo 3 y
+hay que diseñarlo con cuidado para no romper Mundos 1 y 2.
