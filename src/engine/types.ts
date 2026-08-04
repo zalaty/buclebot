@@ -90,7 +90,41 @@ export interface GoalEvent {
   drone: DroneState;
 }
 
-export type StepEvent = MoveEvent | TurnEvent | CrashEvent | GoalEvent;
+/** A `collect` command picked up a coin (World 3). */
+export interface CollectCoinEvent {
+  type: 'collect-coin';
+  drone: DroneState;
+  coinsCollected: number;
+  coinsTotal: number;
+}
+
+/** A `collect` command found nothing worth collecting (empty cell, or a coin already taken). */
+export interface CollectEmptyEvent {
+  type: 'collect-empty';
+  drone: DroneState;
+}
+
+/** A `collect` command picked up a bomb — loses, like a crash (World 3). */
+export interface BoomEvent {
+  type: 'boom';
+  drone: DroneState;
+}
+
+/** All coins collected — wins a `collect-all-coins` level (World 3). */
+export interface WinEvent {
+  type: 'win';
+  drone: DroneState;
+}
+
+export type StepEvent =
+  | MoveEvent
+  | TurnEvent
+  | CrashEvent
+  | GoalEvent
+  | CollectCoinEvent
+  | CollectEmptyEvent
+  | BoomEvent
+  | WinEvent;
 
 // ---- RunResult ----
 

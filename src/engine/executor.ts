@@ -42,6 +42,12 @@ export async function* runSequence(
   const walls = buildWallSet(level);
   const key = (x: number, y: number) => `${x},${y}`;
 
+  const collectsAllCoins = level.objective === 'collect-all-coins';
+  const coinSet = new Set((level.coins ?? []).map(([x, y]) => key(x, y)));
+  const bombSet = new Set((level.bombs ?? []).map(([x, y]) => key(x, y)));
+  const coinsTotal = coinSet.size;
+  const collected = new Set<string>();
+
   let drone: DroneState = { ...level.start };
 
   for (const cmd of program) {
@@ -65,9 +71,33 @@ export async function* runSequence(
       drone = { ...drone, x: nx, y: ny };
       yield { type: 'move', from, to: { ...drone } };
 
-      if (drone.x === level.goal.x && drone.y === level.goal.y) {
+      if (!collectsAllCoins && drone.x === level.goal.x && drone.y === level.goal.y) {
         yield { type: 'goal', drone: { ...drone } };
         return; // stop execution on success
+      }
+    } else if (cmd.type === 'collect') {
+      const posKey = key(drone.x, drone.y);
+
+      if (bombSet.has(posKey)) {
+        yield { type: 'boom', drone: { ...drone } };
+        return; // stop execution on bomb pickup, like a crash
+      }
+
+      if (coinSet.has(posKey) && !collected.has(posKey)) {
+        collected.add(posKey);
+        yield {
+          type: 'collect-coin',
+          drone: { ...drone },
+          coinsCollected: collected.size,
+          coinsTotal,
+        };
+
+        if (collectsAllCoins && collected.size === coinsTotal) {
+          yield { type: 'win', drone: { ...drone } };
+          return; // stop execution on success
+        }
+      } else {
+        yield { type: 'collect-empty', drone: { ...drone } };
       }
     }
   }
