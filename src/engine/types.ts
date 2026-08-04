@@ -10,7 +10,26 @@ export interface DroneState {
 export interface MoveCommand { type: 'move' }
 export interface TurnCommand { type: 'turn'; dir: 'L' | 'R' }
 export interface LoopCommand { type: 'loop'; times: number; body: Command[] }
-export type Command = MoveCommand | TurnCommand | LoopCommand;
+export interface CollectCommand { type: 'collect' }
+
+/** What an object placed on the grid represents (World 3+). */
+export type CellObjectType = 'coin' | 'bomb';
+
+/**
+ * What an IfCommand checks. Currently: the object on the drone's current
+ * cell. Extensible for future sensors (e.g. `{ type: 'wall-ahead' }`).
+ */
+export type Condition = { type: 'cell-has'; object: CellObjectType };
+
+/** SI (condition) ENTONCES (then) SI NO (else). `else` is optional. */
+export interface IfCommand {
+  type: 'if';
+  condition: Condition;
+  then: Command[];
+  else?: Command[];
+}
+
+export type Command = MoveCommand | TurnCommand | LoopCommand | CollectCommand | IfCommand;
 
 export interface Level {
   id: string;
@@ -24,6 +43,15 @@ export interface Level {
   walls?: [number, number][];
   /** Whitelist of open cells; everything else is a wall */
   open?: [number, number][];
+  /** Coin positions (World 3+). Collecting all coins is the win condition when present. */
+  coins?: [number, number][];
+  /** Bomb positions (World 3+). Collecting one loses the level, like a crash. */
+  bombs?: [number, number][];
+  /**
+   * Win condition for this level. Defaults to 'reach-goal' when omitted
+   * (Worlds 1-2). World 3 levels set 'collect-all-coins'.
+   */
+  objective?: 'reach-goal' | 'collect-all-coins';
   /** Optimal command count */
   par: number;
   /** Shown before play */
