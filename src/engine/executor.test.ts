@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
 import { runSequence } from './executor';
-import type { Command, Level, StepEvent } from './types';
+import type { CellObjectType, Command, Level, StepEvent } from './types';
 
 // ---- helpers ----
 const move = { type: 'move' as const };
 const collect = { type: 'collect' as const };
 const R = { type: 'turn' as const, dir: 'R' as const };
+const loopCmd = (times: number, ...body: Command[]): Command => ({ type: 'loop', times, body });
+const ifCmd = (object: CellObjectType, then: Command[], elseBranch?: Command[]): Command =>
+  elseBranch === undefined
+    ? { type: 'if', condition: { type: 'cell-has', object }, then }
+    : { type: 'if', condition: { type: 'cell-has', object }, then, else: elseBranch };
 
 async function run(level: Level, program: Command[]): Promise<StepEvent[]> {
   const events: StepEvent[] = [];
@@ -158,6 +163,116 @@ async function main() {
     assert.equal(events[1].type, 'goal');
     assert.ok(!events.some((e) => e.type === 'win'));
     console.log('✓ coins present without objective: reach-goal behavior, no win event');
+  }
+
+  // ---- Test 8: if condition met (coin present) — executes 'then' ----
+  {
+    const level: Level = {
+      id: 't8',
+      cols: 1,
+      rows: 1,
+      start: { x: 0, y: 0, dir: 1 },
+      goal: { x: 0, y: 0 },
+      coins: [[0, 0]],
+      objective: 'collect-all-coins',
+      par: 2,
+      intro: '',
+    };
+    const events = await run(level, [ifCmd('coin', [collect])]);
+
+    assert.equal(events.length, 2); // collect-coin, win — 'then' ran
+    assert.equal(events[0].type, 'collect-coin');
+    assert.equal(events[1].type, 'win');
+    console.log("✓ if (coin present): runs 'then'");
+  }
+
+  // ---- Test 9: if condition NOT met — executes 'else' (SI NO) ----
+  {
+    // Empty cell (no coin): condition is false, so 'else' (move) runs instead.
+    const level: Level = {
+      id: 't9',
+      cols: 2,
+      rows: 1,
+      start: { x: 0, y: 0, dir: 1 },
+      goal: { x: 1, y: 0 },
+      par: 2,
+      intro: '',
+    };
+    const events = await run(level, [ifCmd('coin', [collect], [move])]);
+
+    assert.equal(events.length, 2); // move, goal — 'else' ran, 'then' (collect) never did
+    assert.equal(events[0].type, 'move');
+    assert.equal(events[1].type, 'goal');
+    console.log("✓ if (coin absent) with else: runs 'else'");
+  }
+
+  // ---- Test 10: if condition NOT met, no else — does nothing, program continues ----
+  {
+    const level: Level = {
+      id: 't10',
+      cols: 2,
+      rows: 1,
+      start: { x: 0, y: 0, dir: 1 },
+      goal: { x: 1, y: 0 },
+      par: 2,
+      intro: '',
+    };
+    // No coin here: the if is skipped entirely (no else branch), then move runs normally.
+    const events = await run(level, [ifCmd('coin', [collect]), move]);
+
+    assert.equal(events.length, 2); // move, goal — nothing from the skipped if
+    assert.equal(events[0].type, 'move');
+    assert.equal(events[1].type, 'goal');
+    console.log('✓ if (condition false, no else): no-op, execution continues');
+  }
+
+  // ---- Test 11: if condition on a bomb — reads the bomb sensor correctly ----
+  {
+    // "SI hay bomba: avanza (evítala); SI NO: recoge." Bomb is under the drone,
+    // so 'then' (move away) must run — if it wrongly ran 'else' (collect), we'd see a boom.
+    const level: Level = {
+      id: 't11',
+      cols: 2,
+      rows: 1,
+      start: { x: 0, y: 0, dir: 1 },
+      goal: { x: 1, y: 0 },
+      bombs: [[0, 0]],
+      par: 2,
+      intro: '',
+    };
+    const events = await run(level, [ifCmd('bomb', [move], [collect])]);
+
+    assert.equal(events.length, 2); // move, goal — bomb correctly detected, avoided
+    assert.equal(events[0].type, 'move');
+    assert.equal(events[1].type, 'goal');
+    console.log('✓ if (bomb present): correctly reads the bomb sensor');
+  }
+
+  // ---- Test 12: if inside a loop — re-evaluated every iteration, not just once ----
+  {
+    // repite×3[avanzar, SI moneda: recoge] over: [start] coin . coin
+    // Iter1: move→coin cell, condition TRUE  → collects coin 1
+    // Iter2: move→empty cell, condition FALSE → no else, no-op
+    // Iter3: move→coin cell, condition TRUE  → collects coin 2 → wins (all coins collected)
+    const level: Level = {
+      id: 't12',
+      cols: 4,
+      rows: 1,
+      start: { x: 0, y: 0, dir: 1 },
+      goal: { x: 3, y: 0 },
+      coins: [[1, 0], [3, 0]],
+      objective: 'collect-all-coins',
+      par: 2,
+      intro: '',
+    };
+    const events = await run(level, [loopCmd(3, move, ifCmd('coin', [collect]))]);
+
+    assert.equal(events.length, 6);
+    assert.deepEqual(
+      events.map((e) => e.type),
+      ['move', 'collect-coin', 'move', 'move', 'collect-coin', 'win'],
+    );
+    console.log('✓ if inside loop: condition re-evaluated on every iteration');
   }
 
   console.log('\nAll executor tests passed.');
