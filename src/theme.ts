@@ -12,6 +12,8 @@ export const colors = {
   hazard: '#3A2A1C',
   hazardEdge: '#F0883E',
   danger: '#FF6B6B',
+  coin: '#FFD166',
+  coinDim: 'rgba(255,209,102,0.20)',
 } as const;
 
 export type Color = (typeof colors)[keyof typeof colors];

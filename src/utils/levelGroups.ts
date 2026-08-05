@@ -1,7 +1,7 @@
 import { Level } from '../engine/types';
 
 /** Levels with this id are debug/dev-only and never appear in normal navigation. */
-const HIDDEN_LEVEL_IDS = new Set(['debug-loop']);
+const HIDDEN_LEVEL_IDS = new Set(['debug-loop', 'debug-collect']);
 
 export const WORLD_TITLES: Record<number, string> = {
   1: 'Secuencias',

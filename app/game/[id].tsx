@@ -45,8 +45,26 @@ const DEBUG_LOOP_PROGRAM: Command[] = [
   { type: 'move' },
 ];
 
+// DEBUG: programa pre-cargado con `collect` puesto a mano, para ver el
+// pintado de monedas/bombas y la animación de recogida sin la UI de
+// condicionales (todavía no existe). Eliminar junto con el nivel
+// 'debug-collect' antes del MVP.
+// Recorrido sobre debug-collect: moneda(1,0) · bomba(3,0) · moneda(4,0):
+// avanza+recoge la 1ª moneda, pasa de largo sobre la bomba sin tocarla,
+// avanza+recoge la 2ª moneda → gana.
+const DEBUG_COLLECT_PROGRAM: Command[] = [
+  { type: 'move' },
+  { type: 'collect' },
+  { type: 'move' },
+  { type: 'move' },
+  { type: 'move' },
+  { type: 'collect' },
+];
+
 export function generateStaticParams() {
-  return LEVELS.filter((l) => l.id !== 'debug-loop').map((l) => ({ id: l.id }));
+  return LEVELS.filter((l) => l.id !== 'debug-loop' && l.id !== 'debug-collect').map((l) => ({
+    id: l.id,
+  }));
 }
 
 type GamePhase = 'idle' | 'running' | 'crashed' | 'won';
@@ -89,6 +107,10 @@ export default function GameScreen() {
   const [toast, setToast] = useState<string>('');
   const [toastWarn, setToastWarn] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  // World 3: position keys ("x,y") of coins collected so far this run.
+  const [collectedCoins, setCollectedCoins] = useState<Set<string>>(new Set());
+  // World 3: cell where a bomb was just picked up, for the boom animation.
+  const [boomAt, setBoomAt] = useState<{ x: number; y: number } | null>(null);
 
   const runningRef = useRef(false);
 
@@ -98,7 +120,13 @@ export default function GameScreen() {
 
   const resetLevel = useCallback(() => {
     if (!level) return;
-    setProgram(level.id === 'debug-loop' ? DEBUG_LOOP_PROGRAM : []);
+    setProgram(
+      level.id === 'debug-loop'
+        ? DEBUG_LOOP_PROGRAM
+        : level.id === 'debug-collect'
+          ? DEBUG_COLLECT_PROGRAM
+          : [],
+    );
     setDraftStack([]);
     setDroneState({ ...level.start });
     setPhase('idle');
@@ -106,6 +134,8 @@ export default function GameScreen() {
     setToast('');
     setToastWarn(false);
     setShowModal(false);
+    setCollectedCoins(new Set());
+    setBoomAt(null);
     runningRef.current = false;
   }, [level]);
 
@@ -372,7 +402,7 @@ export default function GameScreen() {
         setToast('💥 Choque. Vuelves al inicio — revisa tu plan.');
         setToastWarn(true);
         return;
-      } else if (event.type === 'goal') {
+      } else if (event.type === 'goal' || event.type === 'win') {
         await sleep(260);
         const used = countCommands(program);
         const score = getScore(used, level.par);
@@ -381,6 +411,22 @@ export default function GameScreen() {
         setShowModal(true);
         runningRef.current = false;
         setActiveIdx(-1);
+        return;
+      } else if (event.type === 'collect-coin') {
+        setCollectedCoins((prev) => new Set(prev).add(`${event.drone.x},${event.drone.y}`));
+        await sleep(280);
+      } else if (event.type === 'collect-empty') {
+        await sleep(150);
+      } else if (event.type === 'boom') {
+        setPhase('crashed');
+        setActiveIdx(-1);
+        setBoomAt({ x: event.drone.x, y: event.drone.y });
+        await sleep(360);
+        setDroneState({ ...level.start });
+        setBoomAt(null);
+        runningRef.current = false;
+        setToast('💣 ¡Era una bomba! Vuelves al inicio — revisa tu plan.');
+        setToastWarn(true);
         return;
       }
 
@@ -476,6 +522,8 @@ export default function GameScreen() {
                 level={level}
                 droneState={droneState}
                 availableWidth={GRID_PANEL_WIDTH}
+                collectedCoins={collectedCoins}
+                boomAt={boomAt}
               />
               <DroneSprite
                 droneState={droneState}
@@ -487,6 +535,16 @@ export default function GameScreen() {
 
           {/* Strip + controls area */}
           <View style={styles.controlsArea}>
+            {level.coins && level.coins.length > 0 ? (
+              <View style={styles.coinCounter}>
+                <Text style={styles.coinCounterText}>
+                  🪙{' '}
+                  <Text style={styles.coinCounterNum}>{collectedCoins.size}</Text>
+                  <Text style={styles.coinCounterMuted}> / {level.coins.length} monedas</Text>
+                </Text>
+              </View>
+            ) : null}
+
             <CommandStrip
               program={program}
               activeIndex={activeIdx}
@@ -562,7 +620,11 @@ export default function GameScreen() {
                   {result.score === 'optimal' ? 'Ruta óptima ✦' : 'Ruta completada'}
                 </Text>
                 <Text style={styles.cardTitle}>
-                  {result.score === 'optimal' ? '¡Limpio!' : '¡Has llegado!'}
+                  {result.score === 'optimal'
+                    ? '¡Limpio!'
+                    : level.objective === 'collect-all-coins'
+                      ? '¡Las tienes todas!'
+                      : '¡Has llegado!'}
                 </Text>
                 <Text style={styles.cardBody}>
                   Lo resolviste en{' '}
@@ -636,6 +698,23 @@ const styles = StyleSheet.create({
   gameArea: {
     flexDirection: 'column',
     gap: 16,
+  },
+  coinCounter: {
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+  },
+  coinCounterText: {
+    fontFamily: 'monospace',
+    fontSize: 12,
+  },
+  coinCounterNum: {
+    color: colors.coin,
+    fontFamily: 'monospace',
+    fontWeight: '700',
+  },
+  coinCounterMuted: {
+    color: colors.muted,
+    fontFamily: 'monospace',
   },
   gridContainer: {
     alignItems: 'center',
