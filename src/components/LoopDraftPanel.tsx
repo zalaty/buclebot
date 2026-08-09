@@ -30,9 +30,18 @@ interface Props {
 }
 
 function chipLabel(cmd: Command): string {
-  if (cmd.type === 'move') return 'avanzar';
-  if (cmd.type === 'turn') return cmd.dir === 'L' ? '↺ izq' : '↻ der';
-  return `⟳ ${cmd.times}×`;
+  switch (cmd.type) {
+    case 'move':
+      return 'avanzar';
+    case 'turn':
+      return cmd.dir === 'L' ? '↺ izq' : '↻ der';
+    case 'collect':
+      return '🪙 recoge';
+    case 'loop':
+      return `⟳ ${cmd.times}×`;
+    case 'if':
+      return 'SI…';
+  }
 }
 
 export default function LoopDraftPanel({

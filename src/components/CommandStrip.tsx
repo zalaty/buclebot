@@ -6,7 +6,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Command, LoopCommand } from '../engine/types';
+import { Command, Condition, IfCommand, LoopCommand } from '../engine/types';
 import { colors } from '../theme';
 
 interface Props {
@@ -20,9 +20,14 @@ interface Props {
   onTapLoop?: (programIndex: number) => void;
 }
 
-function labelFor(cmd: Exclude<Command, LoopCommand>): string {
+function labelFor(cmd: Exclude<Command, LoopCommand | IfCommand>): string {
   if (cmd.type === 'move') return 'avanzar';
+  if (cmd.type === 'collect') return '🪙 recoge';
   return cmd.dir === 'L' ? '↺ izq' : '↻ der';
+}
+
+function conditionLabel(condition: Condition): string {
+  return condition.object === 'coin' ? 'SI 🪙 moneda' : 'SI 💣 bomba';
 }
 
 const LOOP_ACCENT = [colors.accent, colors.hazardEdge, colors.goal] as const;
@@ -99,6 +104,48 @@ function renderItem(
     return (
       <View key={key} style={blockStyle}>
         {inner}
+      </View>
+    );
+  }
+
+  if (cmd.type === 'if') {
+    const accent = colors.condAccent;
+    const isActive = depth === 0 && topLevelIndex === activeIndex;
+    const hasElse = !!cmd.else && cmd.else.length > 0;
+
+    return (
+      <View
+        key={key}
+        style={[
+          styles.ifBlock,
+          {
+            borderLeftColor: accent,
+            borderColor: isActive ? accent : 'rgba(185,142,255,0.30)',
+            backgroundColor: isActive ? 'rgba(185,142,255,0.16)' : colors.condDim,
+          },
+        ]}
+      >
+        <Text style={[styles.ifCondLabel, { color: accent }]}>{conditionLabel(cmd.condition)}</Text>
+
+        <View style={styles.ifBranch}>
+          <Text style={[styles.ifBranchLabel, { color: accent }]}>ENTONCES</Text>
+          <View style={styles.loopBody}>
+            {cmd.then.map((inner, j) =>
+              renderItem(inner, `${key}-t${j}`, topLevelIndex, -1, depth + 1),
+            )}
+          </View>
+        </View>
+
+        {hasElse && (
+          <View style={styles.ifBranch}>
+            <Text style={[styles.ifBranchLabel, { color: accent }]}>SI NO</Text>
+            <View style={styles.loopBody}>
+              {cmd.else!.map((inner, j) =>
+                renderItem(inner, `${key}-e${j}`, topLevelIndex, -1, depth + 1),
+              )}
+            </View>
+          </View>
+        )}
       </View>
     );
   }
@@ -312,5 +359,34 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontStyle: 'italic',
     opacity: 0.5,
+  },
+  // If container — distinct shape from the loop block: rounded pill header +
+  // stacked branch rows, rather than the loop's single header + inline body.
+  ifBlock: {
+    borderWidth: 1,
+    borderLeftWidth: 3,
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    alignSelf: 'center',
+    gap: 5,
+  },
+  ifCondLabel: {
+    fontFamily: 'monospace',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  ifBranch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  ifBranchLabel: {
+    fontFamily: 'monospace',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    opacity: 0.75,
   },
 });

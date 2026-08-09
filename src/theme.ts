@@ -14,6 +14,9 @@ export const colors = {
   danger: '#FF6B6B',
   coin: '#FFD166',
   coinDim: 'rgba(255,209,102,0.20)',
+  /** Conditional (SI/ENTONCES/SI NO) blocks — kept distinct from the loop's teal/orange/green cycle. */
+  condAccent: '#B98EFF',
+  condDim: 'rgba(185,142,255,0.07)',
 } as const;
 
 export type Color = (typeof colors)[keyof typeof colors];

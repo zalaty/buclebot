@@ -14,11 +14,12 @@ import CommandPalette from '../../src/components/CommandPalette';
 import CommandStrip from '../../src/components/CommandStrip';
 import DroneSprite from '../../src/components/DroneSprite';
 import Grid from '../../src/components/Grid';
+import IfDraftPanel from '../../src/components/IfDraftPanel';
 import LoopDraftPanel from '../../src/components/LoopDraftPanel';
 import { runSequence } from '../../src/engine/executor';
 import { LEVELS } from '../../src/engine/levels';
 import { getScore } from '../../src/engine/scoring';
-import { Command, DroneState, Level } from '../../src/engine/types';
+import { CellObjectType, Command, DroneState, Level } from '../../src/engine/types';
 import { countCommands, unroll } from '../../src/engine/unroll';
 import { colors } from '../../src/theme';
 import { groupLevelsByWorld, levelWorld } from '../../src/utils/levelGroups';
@@ -86,6 +87,17 @@ interface LoopDraft {
   original: { times: number; body: Command[] } | null;
 }
 
+type IfBranch = 'then' | 'else';
+
+interface IfDraft {
+  object: CellObjectType;
+  then: Command[];
+  /** null = no SI NO zone added yet */
+  elseBranch: Command[] | null;
+  /** Which branch new palette taps currently land in */
+  active: IfBranch;
+}
+
 export default function GameScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -98,6 +110,9 @@ export default function GameScreen() {
   // active/innermost cajón — the one commands and Repetir/Cerrar act on.
   const [draftStack, setDraftStack] = useState<LoopDraft[]>([]);
   const activeDraft = draftStack.length > 0 ? draftStack[draftStack.length - 1] : null;
+  // If-draft being built — mutually exclusive with the loop draft stack
+  // (no if-inside-loop or loop-inside-if yet; that's a later piece).
+  const [ifDraft, setIfDraft] = useState<IfDraft | null>(null);
   const [droneState, setDroneState] = useState<DroneState>(
     level ? { ...level.start } : { x: 0, y: 0, dir: 1 },
   );
@@ -128,6 +143,7 @@ export default function GameScreen() {
           : [],
     );
     setDraftStack([]);
+    setIfDraft(null);
     setDroneState({ ...level.start });
     setPhase('idle');
     setActiveIdx(-1);
@@ -143,14 +159,18 @@ export default function GameScreen() {
     resetLevel();
   }, [id, resetLevel]);
 
-  // Total authoring cost including any open drafts (outer + nested)
+  // Total authoring cost including any open drafts (outer + nested loop drafts, or the if draft)
   const draftCost = draftStack.reduce((sum, d) => sum + 1 + countCommands(d.body), 0);
-  const totalCommandCount = countCommands(program) + draftCost;
+  const ifDraftCost = ifDraft
+    ? 1 + countCommands(ifDraft.then) + countCommands(ifDraft.elseBranch ?? [])
+    : 0;
+  const totalCommandCount = countCommands(program) + draftCost + ifDraftCost;
 
   const isOverBudget = (extra: number) =>
     level?.budget !== undefined && totalCommandCount + extra > level.budget;
 
-  // Add a move/turn command — routes into the active (innermost) draft body when one is open
+  // Add a move/turn/collect command — routes into the if draft's active
+  // branch, or the active (innermost) loop draft body, when one is open.
   const addCommand = useCallback(
     (cmd: Command) => {
       if (phase === 'running') return;
@@ -163,7 +183,13 @@ export default function GameScreen() {
         return;
       }
 
-      if (activeDraft !== null) {
+      if (ifDraft !== null) {
+        setIfDraft((prev) => {
+          if (!prev) return prev;
+          if (prev.active === 'then') return { ...prev, then: [...prev.then, cmd] };
+          return { ...prev, elseBranch: [...(prev.elseBranch ?? []), cmd] };
+        });
+      } else if (activeDraft !== null) {
         setDraftStack((prev) => {
           const next = [...prev];
           const last = next[next.length - 1];
@@ -175,12 +201,12 @@ export default function GameScreen() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [phase, activeDraft, totalCommandCount, level],
+    [phase, ifDraft, activeDraft, totalCommandCount, level],
   );
 
   // Open a new loop draft — nests inside the active draft if one is already open
   const openLoop = useCallback(() => {
-    if (phase === 'running' || draftStack.length >= MAX_NEST_DEPTH) return;
+    if (phase === 'running' || draftStack.length >= MAX_NEST_DEPTH || ifDraft !== null) return;
     // Need room for at least the loop node (1) + one body command (1) = 2
     if (level?.budget !== undefined && totalCommandCount + 2 > level.budget) {
       setToast('No hay sitio para un bucle (presupuesto agotado).');
@@ -190,7 +216,69 @@ export default function GameScreen() {
     setToast('');
     setToastWarn(false);
     setDraftStack((prev) => [...prev, { times: 2, body: [], editingIndex: null, original: null }]);
-  }, [phase, draftStack, totalCommandCount, level]);
+  }, [phase, draftStack, ifDraft, totalCommandCount, level]);
+
+  // Open a new if draft. Mutually exclusive with the loop draft stack — no
+  // if-inside-loop or loop-inside-if yet (later piece).
+  const openIf = useCallback(() => {
+    if (phase === 'running' || draftStack.length > 0 || ifDraft !== null) return;
+    // Need room for at least the if node (1) + one ENTONCES command (1) = 2
+    if (level?.budget !== undefined && totalCommandCount + 2 > level.budget) {
+      setToast('No hay sitio para un condicional (presupuesto agotado).');
+      setToastWarn(true);
+      return;
+    }
+    setToast('');
+    setToastWarn(false);
+    setIfDraft({ object: 'coin', then: [], elseBranch: null, active: 'then' });
+  }, [phase, draftStack, ifDraft, totalCommandCount, level]);
+
+  // Seal the if draft into the program. An empty SI NO zone is dropped
+  // silently rather than blocking the close — the student can always add it
+  // back with "+ añadir SI NO" if they change their mind.
+  const closeIf = useCallback(() => {
+    if (!ifDraft || ifDraft.then.length === 0) return;
+    const cleanElse =
+      ifDraft.elseBranch && ifDraft.elseBranch.length > 0 ? ifDraft.elseBranch : undefined;
+    const newIf: Command = {
+      type: 'if',
+      condition: { type: 'cell-has', object: ifDraft.object },
+      then: ifDraft.then,
+      ...(cleanElse ? { else: cleanElse } : {}),
+    };
+    setProgram((prev) => [...prev, newIf]);
+    setIfDraft(null);
+    setToast('');
+    setToastWarn(false);
+  }, [ifDraft]);
+
+  // Discard the if draft entirely.
+  const cancelIf = useCallback(() => {
+    setIfDraft(null);
+    setToast('');
+    setToastWarn(false);
+  }, []);
+
+  const setIfObject = useCallback((object: CellObjectType) => {
+    setIfDraft((prev) => (prev ? { ...prev, object } : prev));
+  }, []);
+
+  // Reveal the SI NO zone (starts empty) and focus it.
+  const addElseBranch = useCallback(() => {
+    setIfDraft((prev) => (prev ? { ...prev, elseBranch: prev.elseBranch ?? [], active: 'else' } : prev));
+  }, []);
+
+  const setIfActiveBranch = useCallback((branch: IfBranch) => {
+    setIfDraft((prev) => (prev ? { ...prev, active: branch } : prev));
+  }, []);
+
+  const removeIfBodyItem = useCallback((branch: IfBranch, index: number) => {
+    setIfDraft((prev) => {
+      if (!prev) return prev;
+      if (branch === 'then') return { ...prev, then: prev.then.filter((_, i) => i !== index) };
+      return { ...prev, elseBranch: (prev.elseBranch ?? []).filter((_, i) => i !== index) };
+    });
+  }, []);
 
   // Seal the active (innermost) draft. If it's nested, fold it back into the
   // parent draft's body (at its original position when it was reopened via
@@ -352,7 +440,21 @@ export default function GameScreen() {
 
   const undoLast = useCallback(() => {
     if (phase === 'running') return;
-    if (activeDraft !== null) {
+    if (ifDraft !== null) {
+      const branchItems = ifDraft.active === 'then' ? ifDraft.then : ifDraft.elseBranch ?? [];
+      if (branchItems.length > 0) {
+        setIfDraft((prev) => {
+          if (!prev) return prev;
+          if (prev.active === 'then') return { ...prev, then: prev.then.slice(0, -1) };
+          return { ...prev, elseBranch: (prev.elseBranch ?? []).slice(0, -1) };
+        });
+      } else if (ifDraft.active === 'else') {
+        // Empty SI NO zone with nothing left in it: drop the branch, focus back on ENTONCES.
+        setIfDraft((prev) => (prev ? { ...prev, elseBranch: null, active: 'then' } : prev));
+      } else {
+        cancelIf(); // ENTONCES empty too — nothing left to undo, discard the draft
+      }
+    } else if (activeDraft !== null) {
       if (activeDraft.body.length > 0) {
         setDraftStack((prev) => {
           const next = [...prev];
@@ -366,7 +468,7 @@ export default function GameScreen() {
     } else {
       setProgram((prev) => prev.slice(0, -1));
     }
-  }, [phase, activeDraft, cancelLoop]);
+  }, [phase, ifDraft, activeDraft, cancelLoop, cancelIf]);
 
   const executeProgram = useCallback(async () => {
     if (!level || phase === 'running' || program.length === 0) return;
@@ -433,11 +535,15 @@ export default function GameScreen() {
       cmdIndex++;
     }
 
-    // Program ended without reaching goal
+    // Program ended without winning
     setActiveIdx(-1);
     setPhase('idle');
     runningRef.current = false;
-    setToast('La ruta termina lejos de la baliza. Ajústala.');
+    setToast(
+      level.objective === 'collect-all-coins'
+        ? 'La ruta termina sin recogerlas todas. Ajústala.'
+        : 'La ruta termina lejos de la baliza. Ajústala.',
+    );
     setToastWarn(true);
   }, [level, phase, program]);
 
@@ -465,7 +571,8 @@ export default function GameScreen() {
   }
 
   const isRunning = phase === 'running';
-  const canRepeat = !isRunning && draftStack.length < MAX_NEST_DEPTH;
+  const canRepeat = !isRunning && draftStack.length < MAX_NEST_DEPTH && ifDraft === null;
+  const canIf = !isRunning && draftStack.length === 0 && ifDraft === null;
 
   // Recursively render the draft stack: each level wraps the next, with only
   // the innermost (active) one interactive — the rest show as paused context.
@@ -556,10 +663,27 @@ export default function GameScreen() {
 
             {renderDraftStack(0)}
 
+            {ifDraft && (
+              <IfDraftPanel
+                object={ifDraft.object}
+                then={ifDraft.then}
+                elseBranch={ifDraft.elseBranch}
+                active={ifDraft.active}
+                onChangeObject={setIfObject}
+                onAddElse={addElseBranch}
+                onSetActiveBranch={setIfActiveBranch}
+                onRemoveBodyItem={removeIfBodyItem}
+                onClose={closeIf}
+                onCancel={cancelIf}
+              />
+            )}
+
             <CommandPalette
               onCommand={addCommand}
               onRepeat={openLoop}
               canRepeat={canRepeat}
+              onIf={openIf}
+              canIf={canIf}
               disabled={isRunning}
             />
 
@@ -567,10 +691,10 @@ export default function GameScreen() {
               <Pressable
                 style={[
                   styles.runBtn,
-                  (isRunning || draftStack.length > 0) && styles.runBtnDisabled,
+                  (isRunning || draftStack.length > 0 || ifDraft !== null) && styles.runBtnDisabled,
                 ]}
                 onPress={executeProgram}
-                disabled={isRunning || draftStack.length > 0}
+                disabled={isRunning || draftStack.length > 0 || ifDraft !== null}
                 accessibilityRole="button"
                 accessibilityLabel="Ejecutar programa"
               >
