@@ -11,9 +11,10 @@ export interface MoveCommand { type: 'move' }
 export interface TurnCommand { type: 'turn'; dir: 'L' | 'R' }
 export interface LoopCommand { type: 'loop'; times: number; body: Command[] }
 export interface CollectCommand { type: 'collect' }
+export interface OpenCommand { type: 'open' }
 
 /** What an object placed on the grid represents (World 3+). */
-export type CellObjectType = 'coin' | 'bomb';
+export type CellObjectType = 'coin' | 'door';
 
 /**
  * What an IfCommand checks. Currently: the object on the drone's current
@@ -29,7 +30,13 @@ export interface IfCommand {
   else?: Command[];
 }
 
-export type Command = MoveCommand | TurnCommand | LoopCommand | CollectCommand | IfCommand;
+export type Command =
+  | MoveCommand
+  | TurnCommand
+  | LoopCommand
+  | CollectCommand
+  | OpenCommand
+  | IfCommand;
 
 export interface Level {
   id: string;
@@ -45,8 +52,8 @@ export interface Level {
   open?: [number, number][];
   /** Coin positions (World 3+). Collecting all coins is the win condition when present. */
   coins?: [number, number][];
-  /** Bomb positions (World 3+). Collecting one loses the level, like a crash. */
-  bombs?: [number, number][];
+  /** Door positions (World 3+). Blocks the path until opened with `open`. */
+  doors?: [number, number][];
   /**
    * Win condition for this level. Defaults to 'reach-goal' when omitted
    * (Worlds 1-2). World 3 levels set 'collect-all-coins'.
