@@ -111,9 +111,25 @@ export interface CollectEmptyEvent {
   drone: DroneState;
 }
 
-/** A `collect` command picked up a bomb — loses, like a crash (World 3). */
-export interface BoomEvent {
-  type: 'boom';
+/** A `move` was blocked by a closed door ahead — the drone stays put, execution continues (World 3). */
+export interface DoorBlockedEvent {
+  type: 'door-blocked';
+  drone: DroneState;
+  /** the blocked cell ahead */
+  attempted: { x: number; y: number };
+}
+
+/** An `open` command opened a closed door ahead (World 3). */
+export interface OpenDoorEvent {
+  type: 'open-door';
+  drone: DroneState;
+  doorsOpened: number;
+  doorsTotal: number;
+}
+
+/** An `open` command found nothing to open (empty cell, wall, already-open door, or an already-collected coin). */
+export interface OpenEmptyEvent {
+  type: 'open-empty';
   drone: DroneState;
 }
 
@@ -130,7 +146,9 @@ export type StepEvent =
   | GoalEvent
   | CollectCoinEvent
   | CollectEmptyEvent
-  | BoomEvent
+  | DoorBlockedEvent
+  | OpenDoorEvent
+  | OpenEmptyEvent
   | WinEvent;
 
 // ---- RunResult ----
