@@ -28,6 +28,8 @@ function chipLabel(cmd: Command): string {
       return cmd.dir === 'L' ? '↺ izq' : '↻ der';
     case 'collect':
       return '🪙 recoge';
+    case 'open':
+      return '🚪 abre';
     case 'loop':
       return `⟳ ${cmd.times}×`;
     case 'if':
@@ -109,13 +111,13 @@ export default function IfDraftPanel({
           </Text>
         </Pressable>
         <Pressable
-          style={[styles.condOption, object === 'bomb' && styles.condOptionActive]}
-          onPress={() => onChangeObject('bomb')}
+          style={[styles.condOption, object === 'door' && styles.condOptionActive]}
+          onPress={() => onChangeObject('door')}
           accessibilityRole="button"
-          accessibilityLabel="Condición: hay bomba"
+          accessibilityLabel="Condición: hay puerta"
         >
-          <Text style={[styles.condOptionText, object === 'bomb' && styles.condOptionTextActive]}>
-            💣 SI bomba
+          <Text style={[styles.condOptionText, object === 'door' && styles.condOptionTextActive]}>
+            🚪 SI puerta
           </Text>
         </Pressable>
       </View>

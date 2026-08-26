@@ -37,6 +37,8 @@ function chipLabel(cmd: Command): string {
       return cmd.dir === 'L' ? '↺ izq' : '↻ der';
     case 'collect':
       return '🪙 recoge';
+    case 'open':
+      return '🚪 abre';
     case 'loop':
       return `⟳ ${cmd.times}×`;
     case 'if':

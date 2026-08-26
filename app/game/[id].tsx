@@ -26,6 +26,21 @@ import { groupLevelsByWorld, levelWorld } from '../../src/utils/levelGroups';
 
 const sleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
 
+// Mirrors the executor's own direction vectors (0=up,1=right,2=down,3=left).
+// `open-door` only reports the drone's own position, not the door's — the
+// door is the cell ahead, in the direction the drone was facing.
+const DIR_VECTORS: Record<number, { x: number; y: number }> = {
+  0: { x: 0, y: -1 },
+  1: { x: 1, y: 0 },
+  2: { x: 0, y: 1 },
+  3: { x: -1, y: 0 },
+};
+
+function aheadKey(drone: DroneState): string {
+  const v = DIR_VECTORS[drone.dir];
+  return `${drone.x + v.x},${drone.y + v.y}`;
+}
+
 // Fixed grid panel width: layout is always single-column (stacked), so the
 // grid never needs to react to viewport width. A JS-measured width isn't an
 // option here — Expo's static web export doesn't reliably apply styles
@@ -46,17 +61,20 @@ const DEBUG_LOOP_PROGRAM: Command[] = [
   { type: 'move' },
 ];
 
-// DEBUG: programa pre-cargado con `collect` puesto a mano, para ver el
-// pintado de monedas/bombas y la animación de recogida sin la UI de
-// condicionales (todavía no existe). Eliminar junto con el nivel
-// 'debug-collect' antes del MVP.
-// Recorrido sobre debug-collect: moneda(1,0) · bomba(3,0) · moneda(4,0):
-// avanza+recoge la 1ª moneda, pasa de largo sobre la bomba sin tocarla,
-// avanza+recoge la 2ª moneda → gana.
+// DEBUG: programa pre-cargado a mano, para ver el pintado de monedas/puertas
+// y sus animaciones sin depender de la UI de condicionales. Eliminar junto
+// con el nivel 'debug-collect' antes del MVP.
+// Recorrido sobre debug-collect: moneda(1,0) · puerta(3,0) · moneda(5,0):
+// avanza+recoge la 1ª moneda, intenta avanzar contra la puerta cerrada
+// (bloqueado, aviso), la abre, avanza a través, avanza+recoge la 2ª
+// moneda → gana (2/2 monedas, 1/1 puertas).
 const DEBUG_COLLECT_PROGRAM: Command[] = [
   { type: 'move' },
   { type: 'collect' },
   { type: 'move' },
+  { type: 'move' }, // blocked: door at (3,0) is still closed
+  { type: 'open' },
+  { type: 'move' }, // now passes through
   { type: 'move' },
   { type: 'move' },
   { type: 'collect' },
@@ -124,8 +142,8 @@ export default function GameScreen() {
   const [showModal, setShowModal] = useState(false);
   // World 3: position keys ("x,y") of coins collected so far this run.
   const [collectedCoins, setCollectedCoins] = useState<Set<string>>(new Set());
-  // World 3: cell where a bomb was just picked up, for the boom animation.
-  const [boomAt, setBoomAt] = useState<{ x: number; y: number } | null>(null);
+  // World 3: position keys ("x,y") of doors opened so far this run.
+  const [openedDoors, setOpenedDoors] = useState<Set<string>>(new Set());
 
   const runningRef = useRef(false);
 
@@ -151,7 +169,7 @@ export default function GameScreen() {
     setToastWarn(false);
     setShowModal(false);
     setCollectedCoins(new Set());
-    setBoomAt(null);
+    setOpenedDoors(new Set());
     runningRef.current = false;
   }, [level]);
 
@@ -496,12 +514,14 @@ export default function GameScreen() {
         setDroneState({ ...event.to });
         await sleep(300);
       } else if (event.type === 'crash') {
+        // Reused for two cases: hit a wall, or the wrong tool on an object
+        // (abrir on a coin / recoger on a door) — both reset like a choque.
         setPhase('crashed');
         setActiveIdx(-1);
         await sleep(360);
         setDroneState({ ...level.start });
         runningRef.current = false;
-        setToast('💥 Choque. Vuelves al inicio — revisa tu plan.');
+        setToast('💥 Eso no funciona ahí. Vuelves al inicio — revisa tu plan.');
         setToastWarn(true);
         return;
       } else if (event.type === 'goal' || event.type === 'win') {
@@ -519,17 +539,19 @@ export default function GameScreen() {
         await sleep(280);
       } else if (event.type === 'collect-empty') {
         await sleep(150);
-      } else if (event.type === 'boom') {
-        setPhase('crashed');
-        setActiveIdx(-1);
-        setBoomAt({ x: event.drone.x, y: event.drone.y });
-        await sleep(360);
-        setDroneState({ ...level.start });
-        setBoomAt(null);
-        runningRef.current = false;
-        setToast('💣 ¡Era una bomba! Vuelves al inicio — revisa tu plan.');
+      } else if (event.type === 'door-blocked') {
+        // Non-fatal warning: the drone didn't move, but the run continues —
+        // the very next command (e.g. an Abrir) can still recover.
+        setToast('🚪 Puerta cerrada. Ábrela antes de avanzar.');
         setToastWarn(true);
-        return;
+        await sleep(300);
+      } else if (event.type === 'open-door') {
+        setOpenedDoors((prev) => new Set(prev).add(aheadKey(event.drone)));
+        setToast('');
+        setToastWarn(false);
+        await sleep(320);
+      } else if (event.type === 'open-empty') {
+        await sleep(150);
       }
 
       cmdIndex++;
@@ -630,7 +652,7 @@ export default function GameScreen() {
                 droneState={droneState}
                 availableWidth={GRID_PANEL_WIDTH}
                 collectedCoins={collectedCoins}
-                boomAt={boomAt}
+                openedDoors={openedDoors}
               />
               <DroneSprite
                 droneState={droneState}
@@ -642,13 +664,22 @@ export default function GameScreen() {
 
           {/* Strip + controls area */}
           <View style={styles.controlsArea}>
-            {level.coins && level.coins.length > 0 ? (
-              <View style={styles.coinCounter}>
-                <Text style={styles.coinCounterText}>
-                  🪙{' '}
-                  <Text style={styles.coinCounterNum}>{collectedCoins.size}</Text>
-                  <Text style={styles.coinCounterMuted}> / {level.coins.length} monedas</Text>
-                </Text>
+            {(level.coins && level.coins.length > 0) || (level.doors && level.doors.length > 0) ? (
+              <View style={styles.counters}>
+                {level.coins && level.coins.length > 0 && (
+                  <Text style={styles.counterText}>
+                    🪙{' '}
+                    <Text style={[styles.counterNum, styles.counterNumCoin]}>{collectedCoins.size}</Text>
+                    <Text style={styles.counterMuted}> / {level.coins.length} monedas</Text>
+                  </Text>
+                )}
+                {level.doors && level.doors.length > 0 && (
+                  <Text style={styles.counterText}>
+                    🚪{' '}
+                    <Text style={[styles.counterNum, styles.counterNumDoor]}>{openedDoors.size}</Text>
+                    <Text style={styles.counterMuted}> / {level.doors.length} puertas</Text>
+                  </Text>
+                )}
               </View>
             ) : null}
 
@@ -823,20 +854,27 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     gap: 16,
   },
-  coinCounter: {
+  counters: {
+    flexDirection: 'row',
+    gap: 16,
     alignSelf: 'flex-start',
     marginBottom: 8,
   },
-  coinCounterText: {
+  counterText: {
     fontFamily: 'monospace',
     fontSize: 12,
   },
-  coinCounterNum: {
-    color: colors.coin,
+  counterNum: {
     fontFamily: 'monospace',
     fontWeight: '700',
   },
-  coinCounterMuted: {
+  counterNumCoin: {
+    color: colors.coin,
+  },
+  counterNumDoor: {
+    color: colors.door,
+  },
+  counterMuted: {
     color: colors.muted,
     fontFamily: 'monospace',
   },

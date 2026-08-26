@@ -381,19 +381,19 @@ export const LEVELS: Level[] = [
     par: 1,
     intro: '[DEBUG] Programa pre-cargado con bucles. Solo para ver el pintado en CommandStrip.',
   },
-  // DEBUG — nivel temporal para probar el pintado de monedas/bombas y la
-  // animación de recogida (Mundo 3, pieza 3). Eliminar antes del MVP.
+  // DEBUG — nivel temporal para probar el pintado de monedas/puertas y sus
+  // animaciones (Mundo 3, piezas 3/R2). Eliminar antes del MVP.
   {
     id: 'debug-collect',
-    cols: 5,
+    cols: 6,
     rows: 1,
     start: { x: 0, y: 0, dir: 1 },
-    goal: { x: 4, y: 0 },
-    coins: [[1, 0], [4, 0]],
-    bombs: [[3, 0]],
+    goal: { x: 5, y: 0 },
+    coins: [[1, 0], [5, 0]],
+    doors: [[3, 0]],
     objective: 'collect-all-coins',
-    par: 6,
+    par: 9,
     intro:
-      '[DEBUG] Programa pre-cargado con collect a mano. Solo para ver monedas, bombas y la animación de recogida.',
+      '[DEBUG] Programa pre-cargado a mano. Solo para ver monedas, puertas (bloqueo/apertura) y sus animaciones.',
   },
 ];

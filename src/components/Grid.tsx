@@ -10,8 +10,8 @@ interface Props {
   availableWidth: number;
   /** Position keys ("x,y") of coins already picked up this run (World 3). */
   collectedCoins?: Set<string>;
-  /** Cell where a bomb was just picked up — plays the boom animation once (World 3). */
-  boomAt?: { x: number; y: number } | null;
+  /** Position keys ("x,y") of doors already opened this run (World 3). */
+  openedDoors?: Set<string>;
 }
 
 interface MarkerProps {
@@ -61,24 +61,24 @@ function CoinMarker({ cellSize, x, y, collected }: MarkerProps & { collected: bo
   );
 }
 
-/** A bomb marker: bursts and fades out once `exploding` flips true (boom). */
-function BombMarker({ cellSize, x, y, exploding }: MarkerProps & { exploding: boolean }) {
+/** A door marker: shrinks and fades out once `open` flips true, revealing the hueco beneath. */
+function DoorMarker({ cellSize, x, y, open }: MarkerProps & { open: boolean }) {
   const scale = useRef(new Animated.Value(1)).current;
   const opacity = useRef(new Animated.Value(1)).current;
-  const wasExploding = useRef(false);
+  const wasOpen = useRef(false);
 
   useEffect(() => {
-    if (exploding && !wasExploding.current) {
+    if (open && !wasOpen.current) {
       Animated.parallel([
-        Animated.timing(scale, { toValue: 1.8, duration: 320, useNativeDriver: true }),
+        Animated.timing(scale, { toValue: 0.15, duration: 320, useNativeDriver: true }),
         Animated.timing(opacity, { toValue: 0, duration: 320, useNativeDriver: true }),
       ]).start();
-    } else if (!exploding && wasExploding.current) {
+    } else if (!open && wasOpen.current) {
       scale.setValue(1);
       opacity.setValue(1);
     }
-    wasExploding.current = exploding;
-  }, [exploding, scale, opacity]);
+    wasOpen.current = open;
+  }, [open, scale, opacity]);
 
   return (
     <Animated.View
@@ -95,8 +95,8 @@ function BombMarker({ cellSize, x, y, exploding }: MarkerProps & { exploding: bo
       ]}
       pointerEvents="none"
     >
-      <View style={styles.bombBadge}>
-        <Text style={styles.objectGlyph}>💣</Text>
+      <View style={styles.doorBadge}>
+        <Text style={styles.objectGlyph}>🚪</Text>
       </View>
     </Animated.View>
   );
@@ -128,7 +128,7 @@ export default function Grid({
   droneState: _droneState,
   availableWidth,
   collectedCoins,
-  boomAt,
+  openedDoors,
 }: Props) {
   const cellSize = Math.max(36, Math.min(74, Math.floor(availableWidth / level.cols)));
 
@@ -185,7 +185,7 @@ export default function Grid({
           pointerEvents="none"
         />
       )}
-      {/* Coins and bombs (World 3) */}
+      {/* Coins and doors (World 3) */}
       {(level.coins ?? []).map(([x, y]) => (
         <CoinMarker
           key={`coin-${x}-${y}`}
@@ -195,13 +195,13 @@ export default function Grid({
           collected={(collectedCoins ?? EMPTY_SET).has(`${x},${y}`)}
         />
       ))}
-      {(level.bombs ?? []).map(([x, y]) => (
-        <BombMarker
-          key={`bomb-${x}-${y}`}
+      {(level.doors ?? []).map(([x, y]) => (
+        <DoorMarker
+          key={`door-${x}-${y}`}
           cellSize={cellSize}
           x={x}
           y={y}
-          exploding={boomAt?.x === x && boomAt?.y === y}
+          open={(openedDoors ?? EMPTY_SET).has(`${x},${y}`)}
         />
       ))}
     </View>
@@ -251,13 +251,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bombBadge: {
+  doorBadge: {
     width: '100%',
     height: '100%',
     borderRadius: 999,
-    backgroundColor: 'rgba(255,107,107,0.16)',
+    backgroundColor: colors.doorDim,
     borderWidth: 2,
-    borderColor: colors.danger,
+    borderColor: colors.door,
     alignItems: 'center',
     justifyContent: 'center',
   },

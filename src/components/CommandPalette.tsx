@@ -17,6 +17,7 @@ const MOVE_BUTTONS: { id: string; cmd: Command; label: string; key: string; icon
   { id: 'turn-L',  cmd: { type: 'turn', dir: 'L' }, label: 'Girar izq.', key: 'A / ←', icon: '↺' },
   { id: 'turn-R',  cmd: { type: 'turn', dir: 'R' }, label: 'Girar der.', key: 'D / →', icon: '↻' },
   { id: 'collect', cmd: { type: 'collect' },        label: 'Recoger',    key: 'S / ↓', icon: '🪙' },
+  { id: 'open',    cmd: { type: 'open' },           label: 'Abrir',      key: 'F',     icon: '🚪' },
 ];
 
 export default function CommandPalette({
@@ -36,6 +37,7 @@ export default function CommandPalette({
       if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft')  onCommand({ type: 'turn', dir: 'L' });
       if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') onCommand({ type: 'turn', dir: 'R' });
       if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown')  onCommand({ type: 'collect' });
+      if (e.key === 'f' || e.key === 'F')                          onCommand({ type: 'open' });
     };
 
     window.addEventListener('keydown', handler);
@@ -108,10 +110,11 @@ const styles = StyleSheet.create({
     gap: 8,
     marginVertical: 12,
   },
-  // Percentage flexBasis (not flex:1) → a stable 3-per-row grid at any
-  // container width, so 6 buttons wrap to 2 rows instead of squeezing thin.
+  // Percentage flexBasis (not flex:1) → a stable 4-per-row grid at any
+  // container width. With 7 buttons this wraps to 4+3 — more balanced than
+  // a 3-per-row grid's leftover single button stretched across the last row.
   button: {
-    flexBasis: '31%',
+    flexBasis: '23%',
     flexGrow: 1,
     backgroundColor: colors.panel2,
     borderWidth: 1,

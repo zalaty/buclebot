@@ -23,11 +23,12 @@ interface Props {
 function labelFor(cmd: Exclude<Command, LoopCommand | IfCommand>): string {
   if (cmd.type === 'move') return 'avanzar';
   if (cmd.type === 'collect') return '🪙 recoge';
+  if (cmd.type === 'open') return '🚪 abre';
   return cmd.dir === 'L' ? '↺ izq' : '↻ der';
 }
 
 function conditionLabel(condition: Condition): string {
-  return condition.object === 'coin' ? 'SI 🪙 moneda' : 'SI 💣 bomba';
+  return condition.object === 'coin' ? 'SI 🪙 moneda' : 'SI 🚪 puerta';
 }
 
 const LOOP_ACCENT = [colors.accent, colors.hazardEdge, colors.goal] as const;
