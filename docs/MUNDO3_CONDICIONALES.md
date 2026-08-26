@@ -74,15 +74,35 @@ Forma completa **SI (condicion) ENTONCES (accion) SI NO (otra accion)** — el i
 Cajon estilo Scratch de dos zonas: boton "SI...", selector de condicion (moneda /
 puerta), zona ENTONCES (siempre) + zona SI NO (opcional). Se sella en la tira.
 
-## 10. Escalera de niveles (rehacer con mecanica puerta/abrir)
+## 10. Escalera de niveles (revisada: sintaxis primero, necesidad despues)
 
-| Nivel | Idea nueva | Resumen |
-|-------|-----------|---------|
-| 1 | El primer condicional | Monedas, sin puertas. "SI moneda: recoge". Concepto desnudo. |
-| 2 | Aparece la puerta | Puerta cerrada bloquea. "SI puerta: abre" para continuar. |
-| 3 | Distinguir (SI/SI NO) | Monedas Y puertas mezcladas. Cada objeto su accion. |
-| 4 | Consolidacion | Varios objetos alternados. Repetitivo -> outro siembra el bucle. |
-| 5 (reto) | Condicional en bucle | repite [avanzar, SI moneda recoge, SI NO abre]. Sintesis. Opcional. |
+Principio: en mapas fijos y visibles el condicional NO es estrictamente obligatorio
+(el alumno puede plantar acciones sueltas en las casillas que ve). Por eso se separa
+en dos fases: primero aprender la SINTAXIS del condicional (aunque las acciones
+sueltas tambien funcionen), luego niveles donde es IMPRESCINDIBLE (condicional en
+bucle: el mismo bloque se aplica a casillas distintas que no se conocen de antemano).
+
+**Fase 1 — Sintaxis (aprender a manejar el condicional):**
+| Nivel | Idea | Resumen |
+|-------|------|---------|
+| 1 | La accion recoger | Monedas. "recoge" suelta, sin condicional. Aprende la accion. |
+| 2 | La puerta bloquea | Puerta cerrada. "abre" para pasar. Aprende la accion y el bloqueo. |
+| 3 | El condicional (sintaxis) | Monedas Y puertas mezcladas. Se introduce "SI moneda recoge / SI puerta abre" como forma comoda de distinguir. Aprende la sintaxis del SI. |
+
+**Fase 2 — Necesidad (condicional en bucle, imprescindible):**
+| Nivel | Idea | Resumen |
+|-------|------|---------|
+| 4 | Condicional en bucle (el momento clave) | Pasillo largo: acciones sueltas casilla a casilla agotan presupuesto -> hay que meter el condicional en un bucle. Primer nivel donde es imprescindible. |
+| 5 | Consolidar | Otro nivel en bucle, mas variedad (SI NO). Confirma que el condicional-en-bucle es LA herramienta, no un truco puntual. |
+| 6 (opcional) | Reto final | Nivel en bucle mas dificil, para los que vuelan. |
+
+**Dependencia tecnica:** los niveles 4-6 requieren **condicional dentro de bucle** en
+la UI, que hoy NO existe (hay exclusion mutua if/loop, decidida al crear la UI de
+condicionales). Hay que quitar esa exclusion y permitir anidar el condicional dentro
+del bucle (interaccion tipo el anidado del Mundo 2). Orden de construccion acordado:
+primero los niveles 1-3 (sintaxis, ya posibles), luego la UI condicional-en-bucle +
+niveles 4-6.
+
 
 ## 11. Estado de implementacion
 - **Reutilizable tal cual:** motor de condicionales (executor evalua el arbol, flag
