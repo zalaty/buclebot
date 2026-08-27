@@ -61,27 +61,29 @@ function CoinMarker({ cellSize, x, y, collected }: MarkerProps & { collected: bo
   );
 }
 
-/** A door marker: shrinks and fades out once `open` flips true, revealing the hueco beneath. */
+/**
+ * A door marker: closed is a solid badge; opening it swings the glyph open
+ * (a satisfying little rotation) and the badge turns into a faint hollow
+ * outline — a visible "hueco de paso", not a vanished object. Unlike a
+ * coin, an opened door stays on the board: it's still there, just passable.
+ */
 function DoorMarker({ cellSize, x, y, open }: MarkerProps & { open: boolean }) {
-  const scale = useRef(new Animated.Value(1)).current;
-  const opacity = useRef(new Animated.Value(1)).current;
+  const rotate = useRef(new Animated.Value(0)).current;
   const wasOpen = useRef(false);
 
   useEffect(() => {
     if (open && !wasOpen.current) {
-      Animated.parallel([
-        Animated.timing(scale, { toValue: 0.15, duration: 320, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 0, duration: 320, useNativeDriver: true }),
-      ]).start();
+      Animated.spring(rotate, { toValue: 1, friction: 6, tension: 55, useNativeDriver: true }).start();
     } else if (!open && wasOpen.current) {
-      scale.setValue(1);
-      opacity.setValue(1);
+      rotate.setValue(0);
     }
     wasOpen.current = open;
-  }, [open, scale, opacity]);
+  }, [open, rotate]);
+
+  const rotateDeg = rotate.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-55deg'] });
 
   return (
-    <Animated.View
+    <View
       style={[
         styles.objectMark,
         {
@@ -89,16 +91,22 @@ function DoorMarker({ cellSize, x, y, open }: MarkerProps & { open: boolean }) {
           height: cellSize - 18,
           left: x * cellSize + 9,
           top: y * cellSize + 9,
-          transform: [{ scale }],
-          opacity,
         },
       ]}
       pointerEvents="none"
     >
-      <View style={styles.doorBadge}>
-        <Text style={styles.objectGlyph}>🚪</Text>
+      <View style={[styles.doorBadge, open && styles.doorBadgeOpen]}>
+        <Animated.Text
+          style={[
+            styles.objectGlyph,
+            open && styles.doorGlyphOpen,
+            { transform: [{ rotate: rotateDeg }] },
+          ]}
+        >
+          🚪
+        </Animated.Text>
       </View>
-    </Animated.View>
+    </View>
   );
 }
 
@@ -260,6 +268,16 @@ const styles = StyleSheet.create({
     borderColor: colors.door,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Open: hollow outline instead of a solid fill — reads as "a doorway
+  // you can see/walk through", not "gone".
+  doorBadgeOpen: {
+    backgroundColor: 'transparent',
+    borderStyle: 'dashed',
+    borderColor: 'rgba(176,133,82,0.45)',
+  },
+  doorGlyphOpen: {
+    opacity: 0.55,
   },
   objectGlyph: {
     fontSize: 16,

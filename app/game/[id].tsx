@@ -41,6 +41,12 @@ function aheadKey(drone: DroneState): string {
   return `${drone.x + v.x},${drone.y + v.y}`;
 }
 
+// Shown both the instant a closed door blocks a move, and — verbatim — as
+// the final message if the run ends stuck there. Same string in both
+// places so the warning reads as one continuous, held state rather than
+// flashing and then being swapped for different wording.
+const DOOR_BLOCKED_MESSAGE = '🚪 Puerta cerrada, ábrela antes de avanzar.';
+
 // Fixed grid panel width: layout is always single-column (stacked), so the
 // grid never needs to react to viewport width. A JS-measured width isn't an
 // option here — Expo's static web export doesn't reliably apply styles
@@ -176,6 +182,27 @@ export default function GameScreen() {
   useEffect(() => {
     resetLevel();
   }, [id, resetLevel]);
+
+  // Whenever the committed program changes — a command added, "Borrar
+  // último", a loop/if sealed or edited — throw away whatever the *last
+  // run* left on screen (drone position, opened doors, collected coins,
+  // result). That state describes a run of a program that no longer
+  // exists; the engine always replays from a clean slate, so the board
+  // must too, or it can show a door as open that the edited program never
+  // actually opens (and then block the drone when it's re-run).
+  useEffect(() => {
+    if (!level || phase === 'running') return;
+    setDroneState({ ...level.start });
+    setPhase('idle');
+    setActiveIdx(-1);
+    setCollectedCoins(new Set());
+    setOpenedDoors(new Set());
+    setResult(null);
+    setShowModal(false);
+    setToast('');
+    setToastWarn(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [program]);
 
   // Total authoring cost including any open drafts (outer + nested loop drafts, or the if draft)
   const draftCost = draftStack.reduce((sum, d) => sum + 1 + countCommands(d.body), 0);
@@ -503,6 +530,10 @@ export default function GameScreen() {
 
     const gen = runSequence(level, unroll(program));
     let cmdIndex = 0;
+    // Tracks an unresolved "door closed" warning so the generic "run ended"
+    // message below doesn't silently overwrite it if the program simply
+    // runs out of commands right after getting blocked.
+    let stuckAtClosedDoor = false;
 
     for await (const event of gen) {
       setActiveIdx(cmdIndex);
@@ -541,11 +572,19 @@ export default function GameScreen() {
         await sleep(150);
       } else if (event.type === 'door-blocked') {
         // Non-fatal warning: the drone didn't move, but the run continues —
-        // the very next command (e.g. an Abrir) can still recover.
-        setToast('🚪 Puerta cerrada. Ábrela antes de avanzar.');
+        // the very next command (e.g. an Abrir) can still recover. Held
+        // noticeably longer than a normal step so it actually registers —
+        // otherwise it reads as the command doing nothing at all. Uses the
+        // exact same text as the "run ended stuck" message below, so if
+        // this turns out to be the last thing that happens, nothing visibly
+        // changes — the warning just stays up instead of flashing then
+        // getting swapped for different wording.
+        stuckAtClosedDoor = true;
+        setToast(DOOR_BLOCKED_MESSAGE);
         setToastWarn(true);
-        await sleep(300);
+        await sleep(650);
       } else if (event.type === 'open-door') {
+        stuckAtClosedDoor = false;
         setOpenedDoors((prev) => new Set(prev).add(aheadKey(event.drone)));
         setToast('');
         setToastWarn(false);
@@ -562,9 +601,11 @@ export default function GameScreen() {
     setPhase('idle');
     runningRef.current = false;
     setToast(
-      level.objective === 'collect-all-coins'
-        ? 'La ruta termina sin recogerlas todas. Ajústala.'
-        : 'La ruta termina lejos de la baliza. Ajústala.',
+      stuckAtClosedDoor
+        ? DOOR_BLOCKED_MESSAGE
+        : level.objective === 'collect-all-coins'
+          ? 'La ruta termina sin recogerlas todas. Ajústala.'
+          : 'La ruta termina lejos de la baliza. Ajústala.',
     );
     setToastWarn(true);
   }, [level, phase, program]);
