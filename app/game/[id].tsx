@@ -14,16 +14,38 @@ import CommandPalette from '../../src/components/CommandPalette';
 import CommandStrip from '../../src/components/CommandStrip';
 import DroneSprite from '../../src/components/DroneSprite';
 import Grid from '../../src/components/Grid';
+import IfDraftPanel from '../../src/components/IfDraftPanel';
 import LoopDraftPanel from '../../src/components/LoopDraftPanel';
 import { runSequence } from '../../src/engine/executor';
 import { LEVELS } from '../../src/engine/levels';
 import { getScore } from '../../src/engine/scoring';
-import { Command, DroneState, Level } from '../../src/engine/types';
+import { CellObjectType, Command, DroneState, Level } from '../../src/engine/types';
 import { countCommands, unroll } from '../../src/engine/unroll';
 import { colors } from '../../src/theme';
 import { groupLevelsByWorld, levelWorld } from '../../src/utils/levelGroups';
 
 const sleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
+
+// Mirrors the executor's own direction vectors (0=up,1=right,2=down,3=left).
+// `open-door` only reports the drone's own position, not the door's — the
+// door is the cell ahead, in the direction the drone was facing.
+const DIR_VECTORS: Record<number, { x: number; y: number }> = {
+  0: { x: 0, y: -1 },
+  1: { x: 1, y: 0 },
+  2: { x: 0, y: 1 },
+  3: { x: -1, y: 0 },
+};
+
+function aheadKey(drone: DroneState): string {
+  const v = DIR_VECTORS[drone.dir];
+  return `${drone.x + v.x},${drone.y + v.y}`;
+}
+
+// Shown both the instant a closed door blocks a move, and — verbatim — as
+// the final message if the run ends stuck there. Same string in both
+// places so the warning reads as one continuous, held state rather than
+// flashing and then being swapped for different wording.
+const DOOR_BLOCKED_MESSAGE = '🚪 Puerta cerrada, ábrela antes de avanzar.';
 
 // Fixed grid panel width: layout is always single-column (stacked), so the
 // grid never needs to react to viewport width. A JS-measured width isn't an
@@ -45,8 +67,29 @@ const DEBUG_LOOP_PROGRAM: Command[] = [
   { type: 'move' },
 ];
 
+// DEBUG: programa pre-cargado a mano, para ver el pintado de monedas/puertas
+// y sus animaciones sin depender de la UI de condicionales. Eliminar junto
+// con el nivel 'debug-collect' antes del MVP.
+// Recorrido sobre debug-collect: moneda(1,0) · puerta(3,0) · moneda(5,0):
+// avanza+recoge la 1ª moneda, intenta avanzar contra la puerta cerrada
+// (bloqueado, aviso), la abre, avanza a través, avanza+recoge la 2ª
+// moneda → gana (2/2 monedas, 1/1 puertas).
+const DEBUG_COLLECT_PROGRAM: Command[] = [
+  { type: 'move' },
+  { type: 'collect' },
+  { type: 'move' },
+  { type: 'move' }, // blocked: door at (3,0) is still closed
+  { type: 'open' },
+  { type: 'move' }, // now passes through
+  { type: 'move' },
+  { type: 'move' },
+  { type: 'collect' },
+];
+
 export function generateStaticParams() {
-  return LEVELS.filter((l) => l.id !== 'debug-loop').map((l) => ({ id: l.id }));
+  return LEVELS.filter((l) => l.id !== 'debug-loop' && l.id !== 'debug-collect').map((l) => ({
+    id: l.id,
+  }));
 }
 
 type GamePhase = 'idle' | 'running' | 'crashed' | 'won';
@@ -68,6 +111,17 @@ interface LoopDraft {
   original: { times: number; body: Command[] } | null;
 }
 
+type IfBranch = 'then' | 'else';
+
+interface IfDraft {
+  object: CellObjectType;
+  then: Command[];
+  /** null = no SI NO zone added yet */
+  elseBranch: Command[] | null;
+  /** Which branch new palette taps currently land in */
+  active: IfBranch;
+}
+
 export default function GameScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -80,6 +134,9 @@ export default function GameScreen() {
   // active/innermost cajón — the one commands and Repetir/Cerrar act on.
   const [draftStack, setDraftStack] = useState<LoopDraft[]>([]);
   const activeDraft = draftStack.length > 0 ? draftStack[draftStack.length - 1] : null;
+  // If-draft being built — mutually exclusive with the loop draft stack
+  // (no if-inside-loop or loop-inside-if yet; that's a later piece).
+  const [ifDraft, setIfDraft] = useState<IfDraft | null>(null);
   const [droneState, setDroneState] = useState<DroneState>(
     level ? { ...level.start } : { x: 0, y: 0, dir: 1 },
   );
@@ -89,6 +146,10 @@ export default function GameScreen() {
   const [toast, setToast] = useState<string>('');
   const [toastWarn, setToastWarn] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  // World 3: position keys ("x,y") of coins collected so far this run.
+  const [collectedCoins, setCollectedCoins] = useState<Set<string>>(new Set());
+  // World 3: position keys ("x,y") of doors opened so far this run.
+  const [openedDoors, setOpenedDoors] = useState<Set<string>>(new Set());
 
   const runningRef = useRef(false);
 
@@ -98,14 +159,23 @@ export default function GameScreen() {
 
   const resetLevel = useCallback(() => {
     if (!level) return;
-    setProgram(level.id === 'debug-loop' ? DEBUG_LOOP_PROGRAM : []);
+    setProgram(
+      level.id === 'debug-loop'
+        ? DEBUG_LOOP_PROGRAM
+        : level.id === 'debug-collect'
+          ? DEBUG_COLLECT_PROGRAM
+          : [],
+    );
     setDraftStack([]);
+    setIfDraft(null);
     setDroneState({ ...level.start });
     setPhase('idle');
     setActiveIdx(-1);
     setToast('');
     setToastWarn(false);
     setShowModal(false);
+    setCollectedCoins(new Set());
+    setOpenedDoors(new Set());
     runningRef.current = false;
   }, [level]);
 
@@ -113,14 +183,39 @@ export default function GameScreen() {
     resetLevel();
   }, [id, resetLevel]);
 
-  // Total authoring cost including any open drafts (outer + nested)
+  // Whenever the committed program changes — a command added, "Borrar
+  // último", a loop/if sealed or edited — throw away whatever the *last
+  // run* left on screen (drone position, opened doors, collected coins,
+  // result). That state describes a run of a program that no longer
+  // exists; the engine always replays from a clean slate, so the board
+  // must too, or it can show a door as open that the edited program never
+  // actually opens (and then block the drone when it's re-run).
+  useEffect(() => {
+    if (!level || phase === 'running') return;
+    setDroneState({ ...level.start });
+    setPhase('idle');
+    setActiveIdx(-1);
+    setCollectedCoins(new Set());
+    setOpenedDoors(new Set());
+    setResult(null);
+    setShowModal(false);
+    setToast('');
+    setToastWarn(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [program]);
+
+  // Total authoring cost including any open drafts (outer + nested loop drafts, or the if draft)
   const draftCost = draftStack.reduce((sum, d) => sum + 1 + countCommands(d.body), 0);
-  const totalCommandCount = countCommands(program) + draftCost;
+  const ifDraftCost = ifDraft
+    ? 1 + countCommands(ifDraft.then) + countCommands(ifDraft.elseBranch ?? [])
+    : 0;
+  const totalCommandCount = countCommands(program) + draftCost + ifDraftCost;
 
   const isOverBudget = (extra: number) =>
     level?.budget !== undefined && totalCommandCount + extra > level.budget;
 
-  // Add a move/turn command — routes into the active (innermost) draft body when one is open
+  // Add a move/turn/collect command — routes into the if draft's active
+  // branch, or the active (innermost) loop draft body, when one is open.
   const addCommand = useCallback(
     (cmd: Command) => {
       if (phase === 'running') return;
@@ -133,7 +228,13 @@ export default function GameScreen() {
         return;
       }
 
-      if (activeDraft !== null) {
+      if (ifDraft !== null) {
+        setIfDraft((prev) => {
+          if (!prev) return prev;
+          if (prev.active === 'then') return { ...prev, then: [...prev.then, cmd] };
+          return { ...prev, elseBranch: [...(prev.elseBranch ?? []), cmd] };
+        });
+      } else if (activeDraft !== null) {
         setDraftStack((prev) => {
           const next = [...prev];
           const last = next[next.length - 1];
@@ -145,12 +246,12 @@ export default function GameScreen() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [phase, activeDraft, totalCommandCount, level],
+    [phase, ifDraft, activeDraft, totalCommandCount, level],
   );
 
   // Open a new loop draft — nests inside the active draft if one is already open
   const openLoop = useCallback(() => {
-    if (phase === 'running' || draftStack.length >= MAX_NEST_DEPTH) return;
+    if (phase === 'running' || draftStack.length >= MAX_NEST_DEPTH || ifDraft !== null) return;
     // Need room for at least the loop node (1) + one body command (1) = 2
     if (level?.budget !== undefined && totalCommandCount + 2 > level.budget) {
       setToast('No hay sitio para un bucle (presupuesto agotado).');
@@ -160,7 +261,69 @@ export default function GameScreen() {
     setToast('');
     setToastWarn(false);
     setDraftStack((prev) => [...prev, { times: 2, body: [], editingIndex: null, original: null }]);
-  }, [phase, draftStack, totalCommandCount, level]);
+  }, [phase, draftStack, ifDraft, totalCommandCount, level]);
+
+  // Open a new if draft. Mutually exclusive with the loop draft stack — no
+  // if-inside-loop or loop-inside-if yet (later piece).
+  const openIf = useCallback(() => {
+    if (phase === 'running' || draftStack.length > 0 || ifDraft !== null) return;
+    // Need room for at least the if node (1) + one ENTONCES command (1) = 2
+    if (level?.budget !== undefined && totalCommandCount + 2 > level.budget) {
+      setToast('No hay sitio para un condicional (presupuesto agotado).');
+      setToastWarn(true);
+      return;
+    }
+    setToast('');
+    setToastWarn(false);
+    setIfDraft({ object: 'coin', then: [], elseBranch: null, active: 'then' });
+  }, [phase, draftStack, ifDraft, totalCommandCount, level]);
+
+  // Seal the if draft into the program. An empty SI NO zone is dropped
+  // silently rather than blocking the close — the student can always add it
+  // back with "+ añadir SI NO" if they change their mind.
+  const closeIf = useCallback(() => {
+    if (!ifDraft || ifDraft.then.length === 0) return;
+    const cleanElse =
+      ifDraft.elseBranch && ifDraft.elseBranch.length > 0 ? ifDraft.elseBranch : undefined;
+    const newIf: Command = {
+      type: 'if',
+      condition: { type: 'cell-has', object: ifDraft.object },
+      then: ifDraft.then,
+      ...(cleanElse ? { else: cleanElse } : {}),
+    };
+    setProgram((prev) => [...prev, newIf]);
+    setIfDraft(null);
+    setToast('');
+    setToastWarn(false);
+  }, [ifDraft]);
+
+  // Discard the if draft entirely.
+  const cancelIf = useCallback(() => {
+    setIfDraft(null);
+    setToast('');
+    setToastWarn(false);
+  }, []);
+
+  const setIfObject = useCallback((object: CellObjectType) => {
+    setIfDraft((prev) => (prev ? { ...prev, object } : prev));
+  }, []);
+
+  // Reveal the SI NO zone (starts empty) and focus it.
+  const addElseBranch = useCallback(() => {
+    setIfDraft((prev) => (prev ? { ...prev, elseBranch: prev.elseBranch ?? [], active: 'else' } : prev));
+  }, []);
+
+  const setIfActiveBranch = useCallback((branch: IfBranch) => {
+    setIfDraft((prev) => (prev ? { ...prev, active: branch } : prev));
+  }, []);
+
+  const removeIfBodyItem = useCallback((branch: IfBranch, index: number) => {
+    setIfDraft((prev) => {
+      if (!prev) return prev;
+      if (branch === 'then') return { ...prev, then: prev.then.filter((_, i) => i !== index) };
+      return { ...prev, elseBranch: (prev.elseBranch ?? []).filter((_, i) => i !== index) };
+    });
+  }, []);
 
   // Seal the active (innermost) draft. If it's nested, fold it back into the
   // parent draft's body (at its original position when it was reopened via
@@ -322,7 +485,21 @@ export default function GameScreen() {
 
   const undoLast = useCallback(() => {
     if (phase === 'running') return;
-    if (activeDraft !== null) {
+    if (ifDraft !== null) {
+      const branchItems = ifDraft.active === 'then' ? ifDraft.then : ifDraft.elseBranch ?? [];
+      if (branchItems.length > 0) {
+        setIfDraft((prev) => {
+          if (!prev) return prev;
+          if (prev.active === 'then') return { ...prev, then: prev.then.slice(0, -1) };
+          return { ...prev, elseBranch: (prev.elseBranch ?? []).slice(0, -1) };
+        });
+      } else if (ifDraft.active === 'else') {
+        // Empty SI NO zone with nothing left in it: drop the branch, focus back on ENTONCES.
+        setIfDraft((prev) => (prev ? { ...prev, elseBranch: null, active: 'then' } : prev));
+      } else {
+        cancelIf(); // ENTONCES empty too — nothing left to undo, discard the draft
+      }
+    } else if (activeDraft !== null) {
       if (activeDraft.body.length > 0) {
         setDraftStack((prev) => {
           const next = [...prev];
@@ -336,7 +513,7 @@ export default function GameScreen() {
     } else {
       setProgram((prev) => prev.slice(0, -1));
     }
-  }, [phase, activeDraft, cancelLoop]);
+  }, [phase, ifDraft, activeDraft, cancelLoop, cancelIf]);
 
   const executeProgram = useCallback(async () => {
     if (!level || phase === 'running' || program.length === 0) return;
@@ -353,6 +530,10 @@ export default function GameScreen() {
 
     const gen = runSequence(level, unroll(program));
     let cmdIndex = 0;
+    // Tracks an unresolved "door closed" warning so the generic "run ended"
+    // message below doesn't silently overwrite it if the program simply
+    // runs out of commands right after getting blocked.
+    let stuckAtClosedDoor = false;
 
     for await (const event of gen) {
       setActiveIdx(cmdIndex);
@@ -364,15 +545,17 @@ export default function GameScreen() {
         setDroneState({ ...event.to });
         await sleep(300);
       } else if (event.type === 'crash') {
+        // Reused for two cases: hit a wall, or the wrong tool on an object
+        // (abrir on a coin / recoger on a door) — both reset like a choque.
         setPhase('crashed');
         setActiveIdx(-1);
         await sleep(360);
         setDroneState({ ...level.start });
         runningRef.current = false;
-        setToast('💥 Choque. Vuelves al inicio — revisa tu plan.');
+        setToast('💥 Eso no funciona ahí. Vuelves al inicio — revisa tu plan.');
         setToastWarn(true);
         return;
-      } else if (event.type === 'goal') {
+      } else if (event.type === 'goal' || event.type === 'win') {
         await sleep(260);
         const used = countCommands(program);
         const score = getScore(used, level.par);
@@ -382,16 +565,48 @@ export default function GameScreen() {
         runningRef.current = false;
         setActiveIdx(-1);
         return;
+      } else if (event.type === 'collect-coin') {
+        setCollectedCoins((prev) => new Set(prev).add(`${event.drone.x},${event.drone.y}`));
+        await sleep(280);
+      } else if (event.type === 'collect-empty') {
+        await sleep(150);
+      } else if (event.type === 'door-blocked') {
+        // Non-fatal warning: the drone didn't move, but the run continues —
+        // the very next command (e.g. an Abrir) can still recover. Held
+        // noticeably longer than a normal step so it actually registers —
+        // otherwise it reads as the command doing nothing at all. Uses the
+        // exact same text as the "run ended stuck" message below, so if
+        // this turns out to be the last thing that happens, nothing visibly
+        // changes — the warning just stays up instead of flashing then
+        // getting swapped for different wording.
+        stuckAtClosedDoor = true;
+        setToast(DOOR_BLOCKED_MESSAGE);
+        setToastWarn(true);
+        await sleep(650);
+      } else if (event.type === 'open-door') {
+        stuckAtClosedDoor = false;
+        setOpenedDoors((prev) => new Set(prev).add(aheadKey(event.drone)));
+        setToast('');
+        setToastWarn(false);
+        await sleep(320);
+      } else if (event.type === 'open-empty') {
+        await sleep(150);
       }
 
       cmdIndex++;
     }
 
-    // Program ended without reaching goal
+    // Program ended without winning
     setActiveIdx(-1);
     setPhase('idle');
     runningRef.current = false;
-    setToast('La ruta termina lejos de la baliza. Ajústala.');
+    setToast(
+      stuckAtClosedDoor
+        ? DOOR_BLOCKED_MESSAGE
+        : level.objective === 'collect-all-coins'
+          ? 'La ruta termina sin recogerlas todas. Ajústala.'
+          : 'La ruta termina lejos de la baliza. Ajústala.',
+    );
     setToastWarn(true);
   }, [level, phase, program]);
 
@@ -419,7 +634,8 @@ export default function GameScreen() {
   }
 
   const isRunning = phase === 'running';
-  const canRepeat = !isRunning && draftStack.length < MAX_NEST_DEPTH;
+  const canRepeat = !isRunning && draftStack.length < MAX_NEST_DEPTH && ifDraft === null;
+  const canIf = !isRunning && draftStack.length === 0 && ifDraft === null;
 
   // Recursively render the draft stack: each level wraps the next, with only
   // the innermost (active) one interactive — the rest show as paused context.
@@ -476,6 +692,8 @@ export default function GameScreen() {
                 level={level}
                 droneState={droneState}
                 availableWidth={GRID_PANEL_WIDTH}
+                collectedCoins={collectedCoins}
+                openedDoors={openedDoors}
               />
               <DroneSprite
                 droneState={droneState}
@@ -487,6 +705,25 @@ export default function GameScreen() {
 
           {/* Strip + controls area */}
           <View style={styles.controlsArea}>
+            {(level.coins && level.coins.length > 0) || (level.doors && level.doors.length > 0) ? (
+              <View style={styles.counters}>
+                {level.coins && level.coins.length > 0 && (
+                  <Text style={styles.counterText}>
+                    🪙{' '}
+                    <Text style={[styles.counterNum, styles.counterNumCoin]}>{collectedCoins.size}</Text>
+                    <Text style={styles.counterMuted}> / {level.coins.length} monedas</Text>
+                  </Text>
+                )}
+                {level.doors && level.doors.length > 0 && (
+                  <Text style={styles.counterText}>
+                    🚪{' '}
+                    <Text style={[styles.counterNum, styles.counterNumDoor]}>{openedDoors.size}</Text>
+                    <Text style={styles.counterMuted}> / {level.doors.length} puertas</Text>
+                  </Text>
+                )}
+              </View>
+            ) : null}
+
             <CommandStrip
               program={program}
               activeIndex={activeIdx}
@@ -498,10 +735,27 @@ export default function GameScreen() {
 
             {renderDraftStack(0)}
 
+            {ifDraft && (
+              <IfDraftPanel
+                object={ifDraft.object}
+                then={ifDraft.then}
+                elseBranch={ifDraft.elseBranch}
+                active={ifDraft.active}
+                onChangeObject={setIfObject}
+                onAddElse={addElseBranch}
+                onSetActiveBranch={setIfActiveBranch}
+                onRemoveBodyItem={removeIfBodyItem}
+                onClose={closeIf}
+                onCancel={cancelIf}
+              />
+            )}
+
             <CommandPalette
               onCommand={addCommand}
               onRepeat={openLoop}
               canRepeat={canRepeat}
+              onIf={openIf}
+              canIf={canIf}
               disabled={isRunning}
             />
 
@@ -509,10 +763,10 @@ export default function GameScreen() {
               <Pressable
                 style={[
                   styles.runBtn,
-                  (isRunning || draftStack.length > 0) && styles.runBtnDisabled,
+                  (isRunning || draftStack.length > 0 || ifDraft !== null) && styles.runBtnDisabled,
                 ]}
                 onPress={executeProgram}
-                disabled={isRunning || draftStack.length > 0}
+                disabled={isRunning || draftStack.length > 0 || ifDraft !== null}
                 accessibilityRole="button"
                 accessibilityLabel="Ejecutar programa"
               >
@@ -562,7 +816,11 @@ export default function GameScreen() {
                   {result.score === 'optimal' ? 'Ruta óptima ✦' : 'Ruta completada'}
                 </Text>
                 <Text style={styles.cardTitle}>
-                  {result.score === 'optimal' ? '¡Limpio!' : '¡Has llegado!'}
+                  {result.score === 'optimal'
+                    ? '¡Limpio!'
+                    : level.objective === 'collect-all-coins'
+                      ? '¡Las tienes todas!'
+                      : '¡Has llegado!'}
                 </Text>
                 <Text style={styles.cardBody}>
                   Lo resolviste en{' '}
@@ -636,6 +894,30 @@ const styles = StyleSheet.create({
   gameArea: {
     flexDirection: 'column',
     gap: 16,
+  },
+  counters: {
+    flexDirection: 'row',
+    gap: 16,
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+  },
+  counterText: {
+    fontFamily: 'monospace',
+    fontSize: 12,
+  },
+  counterNum: {
+    fontFamily: 'monospace',
+    fontWeight: '700',
+  },
+  counterNumCoin: {
+    color: colors.coin,
+  },
+  counterNumDoor: {
+    color: colors.door,
+  },
+  counterMuted: {
+    color: colors.muted,
+    fontFamily: 'monospace',
   },
   gridContainer: {
     alignItems: 'center',

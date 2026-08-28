@@ -249,6 +249,89 @@ export const LEVELS: Level[] = [
       },
     ],
   },
+  // ---- Mundo 3: CONDICIONALES ----
+  // Fase 1 (sintaxis): recoger, abrir, y el condicional para distinguir.
+  // Fase 2 (condicional en bucle) es una pieza posterior — necesita la UI
+  // de condicional-en-bucle, que no existe todavía.
+  {
+    world: 3,
+    id: 'w3-1',
+    cols: 5,
+    rows: 1,
+    start: { x: 0, y: 0, dir: 1 },
+    goal: { x: 4, y: 0 },
+    walls: [],
+    coins: [[2, 0], [4, 0]],
+    objective: 'collect-all-coins',
+    budget: 8,
+    par: 6,
+    intro:
+      'Un objeto nuevo: la moneda. Colócate encima y usa Recoger para llevártela — todavía no hace falta el SI..., solo ponlo en la casilla correcta.',
+    solution: [
+      { type: 'move' },
+      { type: 'move' },
+      { type: 'collect' },
+      { type: 'move' },
+      { type: 'move' },
+      { type: 'collect' },
+    ],
+  },
+  {
+    world: 3,
+    id: 'w3-2',
+    cols: 5,
+    rows: 1,
+    start: { x: 0, y: 0, dir: 1 },
+    goal: { x: 4, y: 0 },
+    walls: [],
+    doors: [[2, 0]],
+    coins: [[4, 0]],
+    objective: 'collect-all-coins',
+    budget: 9,
+    par: 6,
+    intro:
+      'Una puerta cerrada bloquea el paso. Abre comprueba lo que tienes delante — úsalo antes de avanzar, o te quedarás atascado (con aviso, no reinicia).',
+    solution: [
+      { type: 'move' },
+      { type: 'open' },
+      { type: 'move' },
+      { type: 'move' },
+      { type: 'move' },
+      { type: 'collect' },
+    ],
+  },
+  {
+    world: 3,
+    id: 'w3-3',
+    cols: 8,
+    rows: 1,
+    start: { x: 0, y: 0, dir: 1 },
+    goal: { x: 7, y: 0 },
+    walls: [],
+    coins: [[1, 0], [4, 0], [7, 0]],
+    doors: [[3, 0], [6, 0]],
+    objective: 'collect-all-coins',
+    budget: 21,
+    par: 17,
+    intro:
+      'Monedas y puertas mezcladas: cada una pide su propia acción. El SI... es la forma cómoda de decidir sobre la marcha — "SI moneda, recoge"; "SI puerta, abre".',
+    outro:
+      '¿Cuántas veces has escrito el mismo SI...? Cuando el recorrido se alargue de verdad vas a querer meter el condicional DENTRO de un bucle — repetir "avanza, decide" sin copiarlo a mano cada vez. Esa es la próxima frontera.',
+    solution: [
+      { type: 'move' },
+      { type: 'if', condition: { type: 'cell-has', object: 'coin' }, then: [{ type: 'collect' }] },
+      { type: 'move' },
+      { type: 'if', condition: { type: 'cell-has', object: 'door' }, then: [{ type: 'open' }] },
+      { type: 'move' },
+      { type: 'move' },
+      { type: 'if', condition: { type: 'cell-has', object: 'coin' }, then: [{ type: 'collect' }] },
+      { type: 'move' },
+      { type: 'if', condition: { type: 'cell-has', object: 'door' }, then: [{ type: 'open' }] },
+      { type: 'move' },
+      { type: 'move' },
+      { type: 'if', condition: { type: 'cell-has', object: 'coin' }, then: [{ type: 'collect' }] },
+    ],
+  },
   // DEBUG — nivel temporal para probar el pintado de bucles. Eliminar antes del MVP.
   {
     id: 'debug-loop',
@@ -259,5 +342,20 @@ export const LEVELS: Level[] = [
     walls: [],
     par: 1,
     intro: '[DEBUG] Programa pre-cargado con bucles. Solo para ver el pintado en CommandStrip.',
+  },
+  // DEBUG — nivel temporal para probar el pintado de monedas/puertas y sus
+  // animaciones (Mundo 3, piezas 3/R2). Eliminar antes del MVP.
+  {
+    id: 'debug-collect',
+    cols: 6,
+    rows: 1,
+    start: { x: 0, y: 0, dir: 1 },
+    goal: { x: 5, y: 0 },
+    coins: [[1, 0], [5, 0]],
+    doors: [[3, 0]],
+    objective: 'collect-all-coins',
+    par: 9,
+    intro:
+      '[DEBUG] Programa pre-cargado a mano. Solo para ver monedas, puertas (bloqueo/apertura) y sus animaciones.',
   },
 ];

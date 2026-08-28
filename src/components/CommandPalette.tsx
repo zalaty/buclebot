@@ -7,16 +7,27 @@ interface Props {
   onCommand: (cmd: Command) => void;
   onRepeat: () => void;
   canRepeat: boolean;
+  onIf: () => void;
+  canIf: boolean;
   disabled: boolean;
 }
 
 const MOVE_BUTTONS: { id: string; cmd: Command; label: string; key: string; icon: string }[] = [
-  { id: 'move',   cmd: { type: 'move' },           label: 'Avanzar',    key: 'W / ↑', icon: '▲' },
-  { id: 'turn-L', cmd: { type: 'turn', dir: 'L' }, label: 'Girar izq.', key: 'A / ←', icon: '↺' },
-  { id: 'turn-R', cmd: { type: 'turn', dir: 'R' }, label: 'Girar der.', key: 'D / →', icon: '↻' },
+  { id: 'move',    cmd: { type: 'move' },           label: 'Avanzar',    key: 'W / ↑', icon: '▲' },
+  { id: 'turn-L',  cmd: { type: 'turn', dir: 'L' }, label: 'Girar izq.', key: 'A / ←', icon: '↺' },
+  { id: 'turn-R',  cmd: { type: 'turn', dir: 'R' }, label: 'Girar der.', key: 'D / →', icon: '↻' },
+  { id: 'collect', cmd: { type: 'collect' },        label: 'Recoger',    key: 'S / ↓', icon: '🪙' },
+  { id: 'open',    cmd: { type: 'open' },           label: 'Abrir',      key: 'F',     icon: '🚪' },
 ];
 
-export default function CommandPalette({ onCommand, onRepeat, canRepeat, disabled }: Props) {
+export default function CommandPalette({
+  onCommand,
+  onRepeat,
+  canRepeat,
+  onIf,
+  canIf,
+  disabled,
+}: Props) {
   useEffect(() => {
     if (Platform.OS !== 'web') return;
 
@@ -25,6 +36,8 @@ export default function CommandPalette({ onCommand, onRepeat, canRepeat, disable
       if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp')    onCommand({ type: 'move' });
       if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft')  onCommand({ type: 'turn', dir: 'L' });
       if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') onCommand({ type: 'turn', dir: 'R' });
+      if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown')  onCommand({ type: 'collect' });
+      if (e.key === 'f' || e.key === 'F')                          onCommand({ type: 'open' });
     };
 
     window.addEventListener('keydown', handler);
@@ -68,6 +81,24 @@ export default function CommandPalette({ onCommand, onRepeat, canRepeat, disable
         <Text style={[styles.label, styles.repeatLabel]}>Repetir</Text>
         {Platform.OS === 'web' && <Text style={styles.keyHint}> </Text>}
       </Pressable>
+
+      {/* If button — conditional block, own accent distinct from Repetir */}
+      <Pressable
+        style={({ pressed }) => [
+          styles.button,
+          styles.ifButton,
+          pressed && styles.ifButtonPressed,
+          (!canIf || disabled) && styles.buttonDisabled,
+        ]}
+        onPress={() => !disabled && canIf && onIf()}
+        accessibilityLabel="SI... condicional"
+        accessibilityRole="button"
+        disabled={!canIf || disabled}
+      >
+        <Text style={styles.ifIcon}>❓</Text>
+        <Text style={[styles.label, styles.ifLabel]}>SI...</Text>
+        {Platform.OS === 'web' && <Text style={styles.keyHint}> </Text>}
+      </Pressable>
     </View>
   );
 }
@@ -75,11 +106,16 @@ export default function CommandPalette({ onCommand, onRepeat, canRepeat, disable
 const styles = StyleSheet.create({
   palette: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginVertical: 12,
   },
+  // Percentage flexBasis (not flex:1) → a stable 4-per-row grid at any
+  // container width. With 7 buttons this wraps to 4+3 — more balanced than
+  // a 3-per-row grid's leftover single button stretched across the last row.
   button: {
-    flex: 1,
+    flexBasis: '23%',
+    flexGrow: 1,
     backgroundColor: colors.panel2,
     borderWidth: 1,
     borderColor: colors.line,
@@ -126,5 +162,21 @@ const styles = StyleSheet.create({
   },
   repeatLabel: {
     color: colors.accent,
+  },
+  ifButton: {
+    borderColor: 'rgba(185,142,255,0.35)',
+    backgroundColor: colors.condDim,
+  },
+  ifButtonPressed: {
+    borderColor: colors.condAccent,
+    backgroundColor: 'rgba(185,142,255,0.16)',
+    transform: [{ translateY: 1 }],
+  },
+  ifIcon: {
+    fontSize: 22,
+    color: colors.condAccent,
+  },
+  ifLabel: {
+    color: colors.condAccent,
   },
 });

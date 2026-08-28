@@ -12,6 +12,14 @@ export const colors = {
   hazard: '#3A2A1C',
   hazardEdge: '#F0883E',
   danger: '#FF6B6B',
+  coin: '#FFD166',
+  coinDim: 'rgba(255,209,102,0.20)',
+  /** Closed door — warm wood brown, distinct from the coin's gold and the condicional's violet. */
+  door: '#B08552',
+  doorDim: 'rgba(176,133,82,0.22)',
+  /** Conditional (SI/ENTONCES/SI NO) blocks — kept distinct from the loop's teal/orange/green cycle. */
+  condAccent: '#B98EFF',
+  condDim: 'rgba(185,142,255,0.07)',
 } as const;
 
 export type Color = (typeof colors)[keyof typeof colors];

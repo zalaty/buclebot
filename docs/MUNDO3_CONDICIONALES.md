@@ -1,7 +1,11 @@
 # BucleBot — Especificación del Mundo 3: CONDICIONALES
 
-> Documento de diseño (en construcción). Recoge las decisiones del Mundo 3.
+> Documento de diseño. Recoge las decisiones del Mundo 3.
 > Sigue el principio rector del brief: no se puede ganar sin aplicar el concepto.
+>
+> NOTA: esta versión reemplaza el diseño inicial (monedas/bombas pasivas). La mecánica
+> pasó a **monedas/puertas** tras detectar que la bomba pasiva no daba sentido real al
+> condicional "SI bomba". Ahora cada objeto exige una acción condicional distinta.
 
 ---
 
@@ -9,133 +13,119 @@
 Introducir los **condicionales** (SI... ENTONCES... SI NO...) — el tercer pilar del
 pensamiento computacional tras secuencias (Mundo 1) y bucles (Mundo 2).
 
-## 2. El gancho: objetos que recoger
-El dron se encuentra objetos en las casillas y debe decidir qué hacer según lo que
-detecta. Dos tipos de objeto:
-- **Monedas (buenas):** hay que recogerlas.
-- **Bombas (malas):** NO hay que tocarlas (si las recoges, pierdes).
+## 2. El gancho: dos objetos, dos acciones
+El dron recorre la rejilla y se encuentra objetos. Según lo que detecta en su casilla,
+debe ejecutar la acción correcta:
+- **Moneda** -> hay que **Recoger** (recojo lo bueno, suma al contador).
+- **Puerta (cerrada)** -> hay que **Abrir** (abro para poder pasar).
 
-## 2b. Objetivo de victoria (identidad del Mundo 3)
-**El objetivo del nivel es recoger TODAS las monedas** (esquivando bombas), no llegar
-a una baliza. Esto da identidad propia al mundo (Mundo 1 y 2 = "llega a la meta";
-Mundo 3 = "recoge todo", estilo coleccionar / Pac-Man) y hace el condicional el
-corazón del nivel: recoger es el objetivo, y decidir bien (moneda sí, bomba no) es
-cómo se gana.
+El "SI... ENTONCES..." decide qué acción aplicar según el objeto. Como cada objeto
+exige una acción DISTINTA, el condicional es genuinamente necesario: no vale una acción
+única para todo.
 
-**Modelo de ejecución (Modelo A):** el dron pisa las casillas de su ruta.
-- SI hay moneda y ejecuta "recoge" → suma la moneda. ✓
-- SI hay bomba y ejecuta "recoge" → pierde (vuelve al inicio, como el choque del M2).
-- Si pasa por una casilla sin ejecutar "recoge" → la deja intacta.
-- **Se gana al recoger todas las monedas.** Recoger a ciegas es inviable: cogerías
-  una bomba. Hay que distinguir → condicional obligatorio.
+## 3. La puerta bloquea (esto fuerza el condicional)
+- Una **puerta cerrada bloquea el paso**: el dron NO puede avanzar más allá de una
+  puerta cerrada. Si intenta avanzar hacia/sobre una puerta cerrada, se queda atrapado
+  (se muestra un aviso).
+- Para pasar, hay que **Abrir** la puerta primero (estando en/ante ella).
+- Al abrirse, la puerta cambia visualmente de **cerrada a abierta / hueco** por el
+  que se puede pasar libremente (feedback visual satisfactorio).
 
-El bloque condicional distingue **tipo de objeto** ("SI hay moneda") — así un solo
-bloque "SI moneda: recoge" recoge monedas e ignora bombas en cualquier casilla.
-Encaja con el scoring por eficiencia: recoger todas las monedas con los mínimos
-comandos.
+Esto hace la gestión de la puerta OBLIGATORIA: no se puede ignorar; hay que tratarla
+con la acción correcta para continuar.
 
-Esto hace el condicional **obligatorio**: no se puede "recoger siempre" a ciegas,
-porque cogerías una bomba. Hay que **distinguir y decidir** → condicional real.
+## 4. Errores simétricos e inmediatos
+Ejecutar la acción equivocada sobre un objeto **falla de inmediato y reinicia** el
+nivel (vuelta al inicio, como el choque del Mundo 2). Feedback inmediato = el alumno
+aprende la relación causa-efecto en el acto, no de forma diferida.
 
-Encaja con el principio del brief: igual que el presupuesto hacía el bucle
-obligatorio en el Mundo 2, aquí las bombas + el objetivo de recoger todo hacen el
-condicional obligatorio.
+| Accion \ Objeto | Moneda | Puerta cerrada | Vacio |
+|-----------------|--------|----------------|-------|
+| **Recoger**     | OK suma (efecto dorado) | X invalida -> reinicia | nada |
+| **Abrir**       | X invalida -> reinicia | OK abre, desbloquea | nada |
+| **Avanzar**     | pasa por encima | BLOQUEADO si cerrada (aviso) | pasa |
 
-## 3. El sensor (versión simple, primer contacto)
-- **Un solo sensor para empezar: qué hay en la casilla actual del dron.**
-  El condicional pregunta por el contenido de la casilla donde está el dron:
-  ¿moneda?, ¿bomba?, ¿vacía?
-- (Futuro, no ahora) sensor "qué hay delante" → condicional de RUTA
-  ("SI hay muro delante, gira"), que da el superpoder de "un programa resuelve
-  varios mapas". Se añadirá cuando el condicional básico esté asentado.
+- Recoger sobre puerta / Abrir sobre moneda -> accion invalida, reinicia (con feedback
+  visual de error claro).
+- Avanzar contra puerta cerrada -> bloqueado, aviso ("puerta cerrada, abrela primero").
 
-## 4. Estructura del condicional
-Forma completa **SI (condición) ENTONCES (acción) SI NO (otra acción)** — el if/else.
-Ejemplo pedagógico: "SI hay moneda, recoge; SI NO, avanza".
+## 5. Objetivo de victoria (identidad del Mundo 3)
+**Recoger todas las monedas + abrir todas las puertas + llegar al final del recorrido.**
+El condicional es el corazon: recorrer el mapa aplicando la accion correcta a cada
+objeto. Estilo "gestiona lo que encuentras".
 
-## 5. Mecánica del condicional (versión simple)
-- **Condicionales sueltos (no anidados en bucle todavía).** El alumno coloca bloques
-  condicionales en su secuencia, como colocaba comandos. Ej. de programa:
-  `avanzar, [SI moneda: recoge], avanzar, [SI moneda: recoge]...`
-- **El alumno coloca el bloque; el bloque decide al ejecutarse.** Cuando el bloque
-  "SI hay moneda: recoge" se ejecuta en una casilla, comprueba el contenido de esa
-  casilla y actúa (recoge si hay moneda; si no, no hace nada / la acción del SI NO).
-- **Oportunidad pedagógica interna:** colocar condicionales casilla por casilla se
-  vuelve repetitivo → recuerda el tedio del Mundo 1 → genera el deseo de meter el
-  condicional DENTRO de un bucle. Ese es el techo alto del Mundo 3 (condicional en
-  bucle), reservado para los últimos niveles.
+## 6. El sensor (version simple, primer contacto)
+- **Un solo sensor: qué hay en la casilla actual del dron** (moneda?, puerta?, vacio?).
+- (Futuro, Mundo 4) sensor "qué hay delante" -> condicional de RUTA / navegacion.
+  Aplazado a proposito.
 
-## 6. Pendiente de diseñar (siguientes pasos)
-- Interfaz del condicional (construir SI/ENTONCES/SI NO con toque, estilo Scratch).
-- Modelo de datos (extender `Command` con tipo condicional; motor y desenrollado).
-- Escalera de niveles (una idea nueva por nivel).
-- Mecánica de "recoger" y de "perder" (pisar bomba → volver al inicio, como el choque).
-- Techo alto: condicional dentro de bucle.
+## 7. Estructura del condicional
+Forma completa **SI (condicion) ENTONCES (accion) SI NO (otra accion)** — el if/else.
+- Selector de condicion flexible: **"SI hay moneda"** / **"SI hay puerta"**.
+- Ejemplo: "SI hay moneda, recoge; SI NO, abre".
 
-## 7. Decisiones tomadas
-- Concepto: condicionales. ✓
-- Gancho: objetos (monedas buenas / bombas malas). ✓
-- Objetivo del nivel: recoger TODAS las monedas (identidad propia del mundo). ✓
-- Sensor inicial: contenido de la casilla actual (simple). ✓
-- Estructura: SI... ENTONCES... SI NO (if/else). ✓
-- Modelo de ejecución: Modelo A (el dron pisa su ruta, el condicional decide). ✓
-- El condicional distingue tipo de objeto (moneda vs bomba). ✓
-- Empezar simple: un solo sensor; "mirar delante" (ruta) más adelante. ✓
-- Condicionales sueltos primero; condicional-en-bucle como RETO OPCIONAL. ✓
-- El alumno coloca el bloque; el bloque decide al ejecutarse. ✓
+## 8. Mecanica de la UI (version simple)
+- **Condicionales sueltos** (no anidados en bucle todavia).
+- El alumno coloca el bloque; el bloque **decide al ejecutarse**.
+- Paleta: Avanzar, Girar izq, Girar der, **Recoger**, **Abrir**, Repetir, SI...
+- **Techo alto (reto opcional):** condicional dentro de bucle.
 
-## 8. Escalera de niveles (4 obligatorios + 1 reto opcional)
+## 9. Interfaz del condicional (ya implementada, se reutiliza)
+Cajon estilo Scratch de dos zonas: boton "SI...", selector de condicion (moneda /
+puerta), zona ENTONCES (siempre) + zona SI NO (opcional). Se sella en la tira.
 
-| Nivel | Idea nueva | Resumen |
-|-------|-----------|---------|
-| 1 | El primer condicional | Recorrido simple con una moneda. "SI moneda: recoge". Sin bombas. El concepto desnudo. |
-| 2 | Aparece el peligro | Monedas + una bomba. Recoger a ciegas = coger bomba = perder. El condicional importa: hay que distinguir. |
-| 3 | El SI NO (else) | "SI moneda, recoge; SI NO, avanza". El if/else completo. |
-| 4 | Muchos objetos (consolidación) | Varias monedas y bombas. Colocar un condicional por casilla se vuelve repetitivo. Su outro siembra el reto: meter el condicional en un bucle. |
-| 5 (reto) | Condicional en bucle | `repite [avanzar, SI moneda recoge]` recorre y recoge todo. Síntesis de los 3 mundos: secuencia + bucle + condicional. Reto opcional. |
+## 10. Escalera de niveles (revisada: sintaxis primero, necesidad despues)
 
-**Orden de implementación:** niveles 1-4 primero (jugables sin combinar con bucle);
-el 5 (condicional en bucle) como pieza aparte, después, por su alta complejidad de UI
-(anidar tipos distintos: condicional dentro de bucle).
+Principio: en mapas fijos y visibles el condicional NO es estrictamente obligatorio
+(el alumno puede plantar acciones sueltas en las casillas que ve). Por eso se separa
+en dos fases: primero aprender la SINTAXIS del condicional (aunque las acciones
+sueltas tambien funcionen), luego niveles donde es IMPRESCINDIBLE (condicional en
+bucle: el mismo bloque se aplica a casillas distintas que no se conocen de antemano).
 
-**Simetría con el Mundo 2:** allí el Nivel 1 reciclaba el tedio para vender el bucle;
-aquí el Nivel 4 recicla el tedio para vender el condicional-en-bucle. El Nivel 5 es la
-síntesis de los tres pilares del juego.
+**Fase 1 — Sintaxis (aprender a manejar el condicional):**
+| Nivel | Idea | Resumen |
+|-------|------|---------|
+| 1 | La accion recoger | Monedas. "recoge" suelta, sin condicional. Aprende la accion. |
+| 2 | La puerta bloquea | Puerta cerrada. "abre" para pasar. Aprende la accion y el bloqueo. |
+| 3 | El condicional (sintaxis) | Monedas Y puertas mezcladas. Se introduce "SI moneda recoge / SI puerta abre" como forma comoda de distinguir. Aprende la sintaxis del SI. |
 
-## 9. Interfaz del condicional
+**Fase 2 — Necesidad (condicional en bucle, imprescindible):**
+| Nivel | Idea | Resumen |
+|-------|------|---------|
+| 4 | Condicional en bucle (el momento clave) | Pasillo largo: acciones sueltas casilla a casilla agotan presupuesto -> hay que meter el condicional en un bucle. Primer nivel donde es imprescindible. |
+| 5 | Consolidar | Otro nivel en bucle, mas variedad (SI NO). Confirma que el condicional-en-bucle es LA herramienta, no un truco puntual. |
+| 6 (opcional) | Reto final | Nivel en bucle mas dificil, para los que vuelan. |
 
-Estilo Scratch (coherente con los bucles), con **cajón de dos zonas**:
-1. El alumno pulsa un botón nuevo **"SI..."** (junto a Avanzar / Girar / Recoger / Repetir).
-2. Se abre un cajón condicional. Arriba, un **selector de condición flexible**:
-   el alumno elige entre **"SI hay moneda"** o **"SI hay bomba"**.
-3. El cajón tiene dos zonas donde meter comandos tocando (como en el bucle):
-   - **ENTONCES** (siempre visible): qué hacer si se cumple la condición.
-   - **SI NO** (opcional): aparece con un botón "+ añadir SI NO"; qué hacer si no.
-4. Al cerrar, queda sellado en la tira: `SI moneda [recoge] SI NO [avanza]`.
+**Dependencia tecnica:** los niveles 4-6 requieren **condicional dentro de bucle** en
+la UI, que hoy NO existe (hay exclusion mutua if/loop, decidida al crear la UI de
+condicionales). Hay que quitar esa exclusion y permitir anidar el condicional dentro
+del bucle (interaccion tipo el anidado del Mundo 2). Orden de construccion acordado:
+primero los niveles 1-3 (sintaxis, ya posibles), luego la UI condicional-en-bucle +
+niveles 4-6.
 
-**Decisiones de interfaz:**
-- La rama **SI NO es opcional** (los niveles 1-2 usan solo ENTONCES; el SI NO se
-  introduce en el Nivel 3). La interfaz crece con el concepto.
-- El selector de condición es **flexible** desde el principio (moneda / bomba).
-- Comando nuevo en la paleta: **"Recoger"** (acción atómica que va en el ENTONCES).
 
-## 10. Plan técnico (orden de construcción, de dentro hacia afuera)
-1. **Modelo de datos:** extender `Command` con `IfCommand` (condición, `then: Command[]`,
-   `else?: Command[]`) y añadir comando atómico `collect`. Extender `Level` para
-   monedas/bombas y objetivo "recoger todas". La condición referencia tipo de objeto.
-2. **Motor:** el executor evalúa la condición (contenido de la casilla actual) y
-   ejecuta la rama correcta; añade la acción `collect`; nueva condición de victoria
-   (todas las monedas recogidas); pisar/recoger bomba = perder (como el choque).
-   El `unroll` debe contemplar condicionales (ojo: un condicional NO se puede
-   "desenrollar" a ciegas como un bucle, porque depende del estado en ejecución —
-   se evalúa en tiempo de ejecución, no antes).
-3. **Componentes:** pintar monedas y bombas en la rejilla; contador de monedas.
-4. **UI del condicional:** el cajón de dos zonas (ENTONCES / SI NO).
-5. **Niveles:** los 4 como datos, validados por código.
+## 11. Estado de implementacion
+- **Reutilizable tal cual:** motor de condicionales (executor evalua el arbol, flag
+  done), modelo de datos (IfCommand, Condition), UI de crear condicionales, pintado del
+  contenedor condicional, comando collect (Recoger).
+- **A anadir/cambiar:**
+  1. Nueva accion atomica **open** (Abrir), paralela a collect.
+  2. Motor: puerta bloquea avance; abrir desbloquea; acciones invalidas -> reinicia;
+     objetivo "monedas + puertas + final".
+  3. Boton **Abrir** en la paleta.
+  4. Feedback visual: puerta cerrada->abierta, moneda recogida, errores.
+  5. Rehacer los 4 niveles, validados por codigo.
+- **Renombrado:** "bomba" -> "puerta"; se elimina la explosion. Menos belico (mejor
+  para app de menores) y la metafora encaja con "bloquea el paso".
 
-**Nota técnica importante (unroll vs condicionales):** los bucles se desenrollan ANTES
-de ejecutar (su repetición es fija). Los condicionales NO: dependen de lo que el dron
-encuentre en cada casilla en tiempo de ejecución. Esto significa que el executor deja
-de consumir una lista plana pre-desenrollada y pasa a **evaluar el árbol durante la
-ejecución** (o un enfoque híbrido). Es el cambio de motor más importante del Mundo 3 y
-hay que diseñarlo con cuidado para no romper Mundos 1 y 2.
+## 12. Decisiones tomadas
+- Concepto: condicionales. OK
+- Objetos: moneda (recoger) / puerta (abrir). OK
+- La puerta bloquea el paso hasta abrirla. OK
+- Errores simetricos e inmediatos (accion equivocada -> reinicia). OK
+- Feedback visual en aciertos y errores; puerta cerrada->abierta. OK
+- Objetivo: recoger monedas + abrir puertas + llegar al final. OK
+- Sensor: casilla actual; "mirar delante" -> Mundo 4. OK
+- Selector de condicion flexible (moneda / puerta). OK
+- Condicionales sueltos primero; condicional-en-bucle como reto opcional. OK
+- Motor y UI de condicionales existentes se REUTILIZAN. OK

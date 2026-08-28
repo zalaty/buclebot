@@ -15,6 +15,7 @@ import { groupLevelsByWorld, WORLD_CONCEPT_TAGS } from '../src/utils/levelGroups
 const WORLD_SUBTITLES: Record<number, string> = {
   1: 'Planifica la ruta completa antes de ejecutar.',
   2: 'Repite bloques de comandos: el presupuesto no te deja escribirlos todos a mano.',
+  3: 'Monedas para recoger, puertas para abrir: decide antes de actuar.',
 };
 
 export default function LevelSelectScreen() {

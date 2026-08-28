@@ -1,16 +1,18 @@
 import { Level } from '../engine/types';
 
 /** Levels with this id are debug/dev-only and never appear in normal navigation. */
-const HIDDEN_LEVEL_IDS = new Set(['debug-loop']);
+const HIDDEN_LEVEL_IDS = new Set(['debug-loop', 'debug-collect']);
 
 export const WORLD_TITLES: Record<number, string> = {
   1: 'Secuencias',
   2: 'Bucles',
+  3: 'Condicionales',
 };
 
 export const WORLD_CONCEPT_TAGS: Record<number, string> = {
   1: 'ESTO ES UNA SECUENCIA',
   2: 'ESTO ES UN BUCLE',
+  3: 'ESTO ES UN CONDICIONAL',
 };
 
 /** Legacy World 1 levels predate the `world` field, so a missing value means world 1. */
