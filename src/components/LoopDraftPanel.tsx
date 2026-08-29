@@ -25,6 +25,8 @@ interface Props {
   onDelete: () => void;
   /** Tap a sealed loop chip in the body to reopen it for editing (like reopening from the strip). */
   onTapBodyLoop?: (index: number) => void;
+  /** Tap a sealed if chip in the body to reopen it for editing. */
+  onTapBodyIf?: (index: number) => void;
   /** Nested draft rendered inside this one's body — a nested loop draft, or an if draft when the student opens "SI..." inside this loop. */
   children?: React.ReactNode;
 }
@@ -57,6 +59,7 @@ export default function LoopDraftPanel({
   onCancel,
   onDelete,
   onTapBodyLoop,
+  onTapBodyIf,
   children,
 }: Props) {
   const canClose = body.length > 0;
@@ -144,6 +147,28 @@ export default function LoopDraftPanel({
                       disabled={!canEdit}
                       accessibilityRole="button"
                       accessibilityLabel={`Bucle de ${cmd.times} veces. Toca para editar.`}
+                      hitSlop={4}
+                    >
+                      <Text style={styles.chipText}>{chipLabel(cmd)}</Text>
+                      <Text style={styles.chipEditHint}>✎</Text>
+                    </Pressable>
+                  );
+                }
+
+                if (cmd.type === 'if') {
+                  const canEdit = !!onTapBodyIf;
+                  return (
+                    <Pressable
+                      key={i}
+                      style={({ pressed }) => [
+                        styles.chip,
+                        pressed && canEdit && styles.chipPressed,
+                        !canEdit && styles.chipDisabled,
+                      ]}
+                      onPress={() => canEdit && onTapBodyIf!(i)}
+                      disabled={!canEdit}
+                      accessibilityRole="button"
+                      accessibilityLabel="Condicional. Toca para editar."
                       hitSlop={4}
                     >
                       <Text style={styles.chipText}>{chipLabel(cmd)}</Text>

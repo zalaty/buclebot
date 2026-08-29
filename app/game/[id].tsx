@@ -120,6 +120,10 @@ interface IfDraft {
   elseBranch: Command[] | null;
   /** Which branch new palette taps currently land in */
   active: IfBranch;
+  /** null = new if being created; number = index in its container (program, or the active loop draft's body) where this if was reopened from */
+  editingIndex: number | null;
+  /** original state saved so cancelIf can restore it when editing */
+  original: { object: CellObjectType; then: Command[]; elseBranch: Command[] | null } | null;
 }
 
 export default function GameScreen() {
@@ -277,7 +281,14 @@ export default function GameScreen() {
     }
     setToast('');
     setToastWarn(false);
-    setIfDraft({ object: 'coin', then: [], elseBranch: null, active: 'then' });
+    setIfDraft({
+      object: 'coin',
+      then: [],
+      elseBranch: null,
+      active: 'then',
+      editingIndex: null,
+      original: null,
+    });
   }, [phase, draftStack, ifDraft, totalCommandCount, level]);
 
   // Seal the if draft. An empty SI NO zone is dropped silently rather than
@@ -285,6 +296,8 @@ export default function GameScreen() {
   // SI NO" if they change their mind. If a loop draft is open, the sealed
   // if lands in that loop's body (the innermost draft) instead of the
   // top-level program — focus then returns to the loop, which stays open.
+  // When editing (editingIndex set), it's reinserted at its original
+  // position in that same container rather than appended.
   const closeIf = useCallback(() => {
     if (!ifDraft || ifDraft.then.length === 0) return;
     const cleanElse =
@@ -299,19 +312,72 @@ export default function GameScreen() {
       setDraftStack((prev) => {
         const next = [...prev];
         const last = next[next.length - 1];
-        next[next.length - 1] = { ...last, body: [...last.body, newIf] };
+        const body =
+          ifDraft.editingIndex !== null
+            ? (() => {
+                const idx = Math.min(ifDraft.editingIndex!, last.body.length);
+                return [...last.body.slice(0, idx), newIf, ...last.body.slice(idx)];
+              })()
+            : [...last.body, newIf];
+        next[next.length - 1] = { ...last, body };
         return next;
       });
     } else {
-      setProgram((prev) => [...prev, newIf]);
+      setProgram((prev) => {
+        if (ifDraft.editingIndex !== null) {
+          const idx = Math.min(ifDraft.editingIndex, prev.length);
+          return [...prev.slice(0, idx), newIf, ...prev.slice(idx)];
+        }
+        return [...prev, newIf];
+      });
     }
     setIfDraft(null);
     setToast('');
     setToastWarn(false);
   }, [ifDraft, draftStack]);
 
-  // Discard the if draft entirely.
+  // Cancel the if draft. If editing an existing if, restore the original
+  // into its container (program, or the active loop draft's body) at its
+  // original position. Otherwise just discard the new draft.
   const cancelIf = useCallback(() => {
+    if (ifDraft && ifDraft.editingIndex !== null && ifDraft.original) {
+      const { editingIndex, original } = ifDraft;
+      const cleanElse =
+        original.elseBranch && original.elseBranch.length > 0 ? original.elseBranch : undefined;
+      const restored: Command = {
+        type: 'if',
+        condition: { type: 'cell-has', object: original.object },
+        then: original.then,
+        ...(cleanElse ? { else: cleanElse } : {}),
+      };
+      if (draftStack.length > 0) {
+        setDraftStack((prev) => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          const idx = Math.min(editingIndex, last.body.length);
+          next[next.length - 1] = {
+            ...last,
+            body: [...last.body.slice(0, idx), restored, ...last.body.slice(idx)],
+          };
+          return next;
+        });
+      } else {
+        setProgram((prev) => {
+          const idx = Math.min(editingIndex, prev.length);
+          return [...prev.slice(0, idx), restored, ...prev.slice(idx)];
+        });
+      }
+    }
+    setIfDraft(null);
+    setToast('');
+    setToastWarn(false);
+  }, [ifDraft, draftStack]);
+
+  // Delete the if draft entirely. It's already out of its container
+  // (program or the active loop draft's body) since openIfEdit/
+  // openNestedIfEdit removed it — so this just clears the draft without
+  // restoring anything.
+  const deleteIf = useCallback(() => {
     setIfDraft(null);
     setToast('');
     setToastWarn(false);
@@ -474,6 +540,60 @@ export default function GameScreen() {
       setToastWarn(false);
     },
     [phase, draftStack],
+  );
+
+  // Reopen a sealed top-level if from the strip for editing
+  const openIfEdit = useCallback(
+    (index: number) => {
+      if (phase === 'running' || draftStack.length > 0 || ifDraft !== null) return;
+      const cmd = program[index];
+      if (!cmd || cmd.type !== 'if') return;
+      const elseBranch = cmd.else ? [...cmd.else] : null;
+      setProgram((prev) => prev.filter((_, i) => i !== index));
+      setIfDraft({
+        object: cmd.condition.object,
+        then: [...cmd.then],
+        elseBranch,
+        active: 'then',
+        editingIndex: index,
+        original: { object: cmd.condition.object, then: [...cmd.then], elseBranch },
+      });
+      setToast('');
+      setToastWarn(false);
+    },
+    [phase, draftStack, program, ifDraft],
+  );
+
+  // Reopen a sealed if that's nested inside the active loop draft's own
+  // body — same idea as openIfEdit, but the "container" is the active
+  // draft's body instead of the top-level program. Only allowed while
+  // exactly one loop is open (matching the loop→if depth limit — an if can
+  // only ever live in the program or directly in a single open loop's body).
+  const openNestedIfEdit = useCallback(
+    (bodyIndex: number) => {
+      if (phase === 'running' || draftStack.length !== 1 || ifDraft !== null) return;
+      const parent = draftStack[0];
+      const cmd = parent.body[bodyIndex];
+      if (!cmd || cmd.type !== 'if') return;
+      const elseBranch = cmd.else ? [...cmd.else] : null;
+
+      const updatedParent: LoopDraft = {
+        ...parent,
+        body: parent.body.filter((_, i) => i !== bodyIndex),
+      };
+      setDraftStack([updatedParent]);
+      setIfDraft({
+        object: cmd.condition.object,
+        then: [...cmd.then],
+        elseBranch,
+        active: 'then',
+        editingIndex: bodyIndex,
+        original: { object: cmd.condition.object, then: [...cmd.then], elseBranch },
+      });
+      setToast('');
+      setToastWarn(false);
+    },
+    [phase, draftStack, ifDraft],
   );
 
   // Remove a single command from the active (innermost) draft's body
@@ -669,12 +789,14 @@ export default function GameScreen() {
           then={ifDraft.then}
           elseBranch={ifDraft.elseBranch}
           active={ifDraft.active}
+          isEditing={ifDraft.editingIndex !== null}
           onChangeObject={setIfObject}
           onAddElse={addElseBranch}
           onSetActiveBranch={setIfActiveBranch}
           onRemoveBodyItem={removeIfBodyItem}
           onClose={closeIf}
           onCancel={cancelIf}
+          onDelete={deleteIf}
         />
       ) : (
         renderDraftStack(idx + 1)
@@ -692,6 +814,7 @@ export default function GameScreen() {
         onCancel={cancelLoop}
         onDelete={deleteLoop}
         onTapBodyLoop={draftStack.length < MAX_NEST_DEPTH ? openNestedLoopEdit : undefined}
+        onTapBodyIf={draftStack.length === 1 ? openNestedIfEdit : undefined}
       >
         {nestedContent}
       </LoopDraftPanel>
@@ -770,6 +893,9 @@ export default function GameScreen() {
               onTapLoop={
                 !isRunning && draftStack.length === 0 && ifDraft === null ? openLoopEdit : undefined
               }
+              onTapIf={
+                !isRunning && draftStack.length === 0 && ifDraft === null ? openIfEdit : undefined
+              }
             />
 
             {renderDraftStack(0)}
@@ -780,12 +906,14 @@ export default function GameScreen() {
                 then={ifDraft.then}
                 elseBranch={ifDraft.elseBranch}
                 active={ifDraft.active}
+                isEditing={ifDraft.editingIndex !== null}
                 onChangeObject={setIfObject}
                 onAddElse={addElseBranch}
                 onSetActiveBranch={setIfActiveBranch}
                 onRemoveBodyItem={removeIfBodyItem}
                 onClose={closeIf}
                 onCancel={cancelIf}
+                onDelete={deleteIf}
               />
             )}
 

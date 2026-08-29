@@ -12,12 +12,17 @@ interface Props {
   elseBranch: Command[] | null;
   /** Which branch new palette taps currently land in */
   active: Branch;
+  /** true = reopened existing if; false = new if being created */
+  isEditing: boolean;
   onChangeObject: (object: CellObjectType) => void;
   onAddElse: () => void;
   onSetActiveBranch: (branch: Branch) => void;
   onRemoveBodyItem: (branch: Branch, index: number) => void;
   onClose: () => void;
+  /** Cancel: discards edits and restores original (if editing), or discards new if. */
   onCancel: () => void;
+  /** Delete: removes the if entirely (only meaningful when isEditing). */
+  onDelete: () => void;
 }
 
 function chipLabel(cmd: Command): string {
@@ -42,12 +47,14 @@ export default function IfDraftPanel({
   then,
   elseBranch,
   active,
+  isEditing,
   onChangeObject,
   onAddElse,
   onSetActiveBranch,
   onRemoveBodyItem,
   onClose,
   onCancel,
+  onDelete,
 }: Props) {
   const canClose = then.length > 0;
 
@@ -92,7 +99,7 @@ export default function IfDraftPanel({
   return (
     <View style={styles.panel}>
       <View style={styles.titleRow}>
-        <Text style={styles.panelTitle}>❓ SI...</Text>
+        <Text style={styles.panelTitle}>{isEditing ? '❓ EDITAR CONDICIONAL' : '❓ SI...'}</Text>
         <Pressable onPress={onCancel} hitSlop={10}>
           <Text style={styles.cancelX}>✕</Text>
         </Pressable>
@@ -144,12 +151,20 @@ export default function IfDraftPanel({
           onPress={onClose}
           disabled={!canClose}
         >
-          <Text style={styles.closeBtnText}>Cerrar condicional ✓</Text>
+          <Text style={styles.closeBtnText}>
+            {isEditing ? 'Guardar cambios ✓' : 'Cerrar condicional ✓'}
+          </Text>
         </Pressable>
         <Pressable style={styles.cancelBtn} onPress={onCancel}>
           <Text style={styles.cancelBtnText}>Cancelar</Text>
         </Pressable>
       </View>
+
+      {isEditing && (
+        <Pressable style={styles.deleteBtn} onPress={onDelete}>
+          <Text style={styles.deleteBtnText}>Eliminar condicional</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -325,5 +340,16 @@ const styles = StyleSheet.create({
   cancelBtnText: {
     fontSize: 12,
     color: colors.muted,
+  },
+  deleteBtn: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,107,107,0.30)',
+    borderRadius: 9,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  deleteBtnText: {
+    fontSize: 12,
+    color: colors.danger,
   },
 });
