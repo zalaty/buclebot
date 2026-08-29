@@ -25,7 +25,7 @@ interface Props {
   onDelete: () => void;
   /** Tap a sealed loop chip in the body to reopen it for editing (like reopening from the strip). */
   onTapBodyLoop?: (index: number) => void;
-  /** Nested loop draft, rendered inside this one's body when the student opens a loop within a loop. */
+  /** Nested draft rendered inside this one's body — a nested loop draft, or an if draft when the student opens "SI..." inside this loop. */
   children?: React.ReactNode;
 }
 
@@ -202,7 +202,7 @@ export default function LoopDraftPanel({
         )}
 
         {!active && (
-          <Text style={styles.pausedHint}>Editando el bucle de dentro…</Text>
+          <Text style={styles.pausedHint}>Editando dentro de este bucle…</Text>
         )}
       </View>
 
