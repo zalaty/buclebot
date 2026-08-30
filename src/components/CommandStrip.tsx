@@ -18,6 +18,8 @@ interface Props {
   budget?: number;
   /** When provided, top-level loop blocks become tappable for editing. */
   onTapLoop?: (programIndex: number) => void;
+  /** When provided, top-level if blocks become tappable for editing. */
+  onTapIf?: (programIndex: number) => void;
 }
 
 function labelFor(cmd: Exclude<Command, LoopCommand | IfCommand>): string {
@@ -54,6 +56,7 @@ function renderItem(
   activeIndex: number,
   depth: number,
   onTapLoop?: (index: number) => void,
+  onTapIf?: (index: number) => void,
 ): React.ReactElement {
   if (cmd.type === 'loop') {
     const di = depthIdx(depth);
@@ -113,20 +116,23 @@ function renderItem(
     const accent = colors.condAccent;
     const isActive = depth === 0 && topLevelIndex === activeIndex;
     const hasElse = !!cmd.else && cmd.else.length > 0;
+    const tappable = depth === 0 && !!onTapIf;
 
-    return (
-      <View
-        key={key}
-        style={[
-          styles.ifBlock,
-          {
-            borderLeftColor: accent,
-            borderColor: isActive ? accent : 'rgba(185,142,255,0.30)',
-            backgroundColor: isActive ? 'rgba(185,142,255,0.16)' : colors.condDim,
-          },
-        ]}
-      >
-        <Text style={[styles.ifCondLabel, { color: accent }]}>{conditionLabel(cmd.condition)}</Text>
+    const blockStyle = [
+      styles.ifBlock,
+      {
+        borderLeftColor: accent,
+        borderColor: isActive ? accent : 'rgba(185,142,255,0.30)',
+        backgroundColor: isActive ? 'rgba(185,142,255,0.16)' : colors.condDim,
+      },
+    ];
+
+    const inner = (
+      <>
+        <View style={styles.ifHeader}>
+          <Text style={[styles.ifCondLabel, { color: accent }]}>{conditionLabel(cmd.condition)}</Text>
+          {tappable && <Text style={[styles.loopEditHint, { color: accent }]}>✎</Text>}
+        </View>
 
         <View style={styles.ifBranch}>
           <Text style={[styles.ifBranchLabel, { color: accent }]}>ENTONCES</Text>
@@ -147,6 +153,26 @@ function renderItem(
             </View>
           </View>
         )}
+      </>
+    );
+
+    if (tappable) {
+      return (
+        <Pressable
+          key={key}
+          style={({ pressed }) => [...blockStyle, pressed && styles.loopBlockPressed]}
+          onPress={() => onTapIf!(topLevelIndex)}
+          accessibilityRole="button"
+          accessibilityLabel="Condicional. Toca para editar."
+        >
+          {inner}
+        </Pressable>
+      );
+    }
+
+    return (
+      <View key={key} style={blockStyle}>
+        {inner}
       </View>
     );
   }
@@ -168,6 +194,7 @@ export default function CommandStrip({
   par,
   budget,
   onTapLoop,
+  onTapIf,
 }: Props) {
   const scrollRef = useRef<ScrollView>(null);
 
@@ -219,7 +246,7 @@ export default function CommandStrip({
           </Text>
         ) : (
           program.map((cmd, i) =>
-            renderItem(cmd, String(i), i, activeIndex, 0, onTapLoop),
+            renderItem(cmd, String(i), i, activeIndex, 0, onTapLoop, onTapIf),
           )
         )}
       </ScrollView>
@@ -371,6 +398,12 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     alignSelf: 'center',
     gap: 5,
+  },
+  ifHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
   },
   ifCondLabel: {
     fontFamily: 'monospace',

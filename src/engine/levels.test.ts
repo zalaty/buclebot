@@ -16,10 +16,23 @@ function getLevel(id: string): Level {
   return level;
 }
 
+/** Largest `times` among any loop node in the tree — the UI's Repetir stepper caps at 9. */
+function maxLoopTimes(commands: Command[]): number {
+  let max = 0;
+  for (const cmd of commands) {
+    if (cmd.type === 'loop') {
+      max = Math.max(max, cmd.times, maxLoopTimes(cmd.body));
+    } else if (cmd.type === 'if') {
+      max = Math.max(max, maxLoopTimes(cmd.then), maxLoopTimes(cmd.else ?? []));
+    }
+  }
+  return max;
+}
+
 async function main() {
   // Fase 1 (sintaxis): recoger (w3-1), abrir + bloqueo (w3-2), condicional (w3-3).
-  // Fase 2 (condicional en bucle, niveles 4-6) es una pieza posterior.
-  for (const id of ['w3-1', 'w3-2', 'w3-3']) {
+  // Fase 2 (necesidad, condicional dentro de bucle): w3-4, w3-5.
+  for (const id of ['w3-1', 'w3-2', 'w3-3', 'w3-4', 'w3-5']) {
     const level = getLevel(id);
     assert.ok(level.solution, `${id}: missing solution`);
     assert.equal(level.objective, 'collect-all-coins', `${id}: wrong objective`);
@@ -65,6 +78,30 @@ async function main() {
       `✓ ${id}: solution wins cleanly — ${solutionCost} comandos (par ${level.par}, budget ${level.budget}) — ` +
         `${coinsTotal} moneda(s), ${doorsTotal} puerta(s)`,
     );
+
+    // Fase 2 (w3-4, w3-5): the loop+if solution must be the necessary path —
+    // plant­ing bare move/collect/open actions casilla a casilla (no loop,
+    // no if — the map is fully visible so neither is strictly required
+    // syntactically) has to blow the budget, or the level doesn't actually
+    // force the concept it's teaching.
+    if (id === 'w3-4' || id === 'w3-5') {
+      const manualMoves = level.goal.x - level.start.x;
+      const manualCost = manualMoves + coinsTotal + doorsTotal;
+      assert.ok(
+        manualCost > level.budget!,
+        `${id}: bare casilla-a-casilla cost ${manualCost} fits in budget ${level.budget} — loop+if isn't actually required`,
+      );
+      console.log(
+        `  ↳ bare manual approach would cost ${manualCost} (budget ${level.budget}) — loop+if genuinely required`,
+      );
+
+      // The Repetir stepper in the UI (LoopDraftPanel) caps `times` at 9 —
+      // a solution that needs more is unbuildable by a student, no matter
+      // how well they understand the concept.
+      const times = maxLoopTimes(level.solution!);
+      assert.ok(times <= 9, `${id}: solution needs times=${times}, but the UI's Repetir stepper caps at 9`);
+      console.log(`  ↳ loop times=${times} (UI stepper max: 9) — buildable in the UI`);
+    }
   }
 
   console.log('\nAll World 3 level validations passed.');

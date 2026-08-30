@@ -251,8 +251,10 @@ export const LEVELS: Level[] = [
   },
   // ---- Mundo 3: CONDICIONALES ----
   // Fase 1 (sintaxis): recoger, abrir, y el condicional para distinguir.
-  // Fase 2 (condicional en bucle) es una pieza posterior — necesita la UI
-  // de condicional-en-bucle, que no existe todavía.
+  // Fase 2 (necesidad, w3-4/w3-5): el mismo recorrido "avanza y decide" se
+  // repite tantas veces que plantar acciones sueltas casilla a casilla no
+  // cabe en el presupuesto — el condicional DENTRO de un bucle deja de ser
+  // un lujo y pasa a ser la única vía razonable.
   {
     world: 3,
     id: 'w3-1',
@@ -330,6 +332,62 @@ export const LEVELS: Level[] = [
       { type: 'move' },
       { type: 'move' },
       { type: 'if', condition: { type: 'cell-has', object: 'coin' }, then: [{ type: 'collect' }] },
+    ],
+  },
+  {
+    world: 3,
+    id: 'w3-4',
+    cols: 9,
+    rows: 1,
+    start: { x: 0, y: 0, dir: 1 },
+    goal: { x: 8, y: 0 },
+    walls: [],
+    coins: [[2, 0], [4, 0], [6, 0], [8, 0]],
+    doors: [[5, 0]],
+    objective: 'collect-all-coins',
+    budget: 8,
+    par: 6,
+    intro:
+      'Pasillo largo con monedas y una puerta. Ir casilla a casilla no te va a caber en el presupuesto: mete el SI... DENTRO de un Repetir — "repite: avanza y decide" las veces que haga falta.',
+    solution: [
+      {
+        type: 'loop',
+        times: 8,
+        body: [
+          { type: 'move' },
+          { type: 'if', condition: { type: 'cell-has', object: 'coin' }, then: [{ type: 'collect' }] },
+          { type: 'if', condition: { type: 'cell-has', object: 'door' }, then: [{ type: 'open' }] },
+        ],
+      },
+    ],
+  },
+  {
+    world: 3,
+    id: 'w3-5',
+    cols: 10,
+    rows: 1,
+    start: { x: 0, y: 0, dir: 1 },
+    goal: { x: 9, y: 0 },
+    walls: [],
+    coins: [[2, 0], [4, 0], [6, 0], [8, 0], [9, 0]],
+    doors: [[3, 0], [7, 0]],
+    objective: 'collect-all-coins',
+    budget: 8,
+    par: 6,
+    intro:
+      'Más monedas y ahora DOS puertas — pero el mismo truco que en el pasillo anterior: repite [avanza, SI moneda recoge, SI puerta abre]. Nada nuevo que aprender, solo confirmar que ya lo dominas.',
+    outro:
+      'El programa no ha crecido aunque haya más monedas y puertas — solo repites más veces el mismo patrón pequeño. El condicional dentro del bucle es tu herramienta fija, no un truco de un solo nivel. ¿Y si el dron tuviera que fijarse en más que la casilla de al lado para elegir su propio camino? Esa es la próxima frontera.',
+    solution: [
+      {
+        type: 'loop',
+        times: 9,
+        body: [
+          { type: 'move' },
+          { type: 'if', condition: { type: 'cell-has', object: 'coin' }, then: [{ type: 'collect' }] },
+          { type: 'if', condition: { type: 'cell-has', object: 'door' }, then: [{ type: 'open' }] },
+        ],
+      },
     ],
   },
   // DEBUG — nivel temporal para probar el pintado de bucles. Eliminar antes del MVP.
